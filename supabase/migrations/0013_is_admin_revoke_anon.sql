@@ -1,0 +1,11 @@
+-- is_admin() reflects only the caller's own session (auth.email(), not a
+-- parameter) and returns nothing but a boolean, so it can't be used to check
+-- someone else's status or leak data -- calling it directly via RPC isn't
+-- exploitable. Still, `anon` (unauthenticated) has no legitimate reason to
+-- call it in this app, so revoke it there as defense-in-depth per the
+-- security advisor. `authenticated` keeps EXECUTE: every admin RLS policy
+-- (0009_rls_policies.sql) calls is_admin() in its USING/WITH CHECK clause,
+-- and that call is privilege-checked against the querying role regardless of
+-- this function's own SECURITY DEFINER status -- revoking it there would
+-- break RLS evaluation for real signed-in admins using /admin.
+revoke execute on function is_admin() from anon;

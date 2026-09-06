@@ -1,0 +1,15 @@
+-- Fix infinite recursion in is_admin(): it queries `members`, but every RLS
+-- policy on `members` (see 0009_rls_policies.sql) calls is_admin() to decide
+-- access. Running as the caller (the default, "security invoker"), that
+-- internal query re-triggers the same policy, which calls is_admin() again,
+-- forever, until Postgres hits its stack depth limit (error 54001) -- this
+-- was only ever exercised by the service-role client until now (which
+-- bypasses RLS entirely), so it went undetected until a real Supabase Auth
+-- session actually called is_admin().
+--
+-- security definer makes the function run as its owner (bypassing RLS on
+-- the internal `members` lookup), which is exactly what's needed here: an
+-- unprivileged caller must be able to ask "am I an admin" without needing
+-- read access to `members` in the first place -- that's the whole point of
+-- the check. search_path was already pinned in 0011; unaffected by this.
+alter function is_admin() security definer;
