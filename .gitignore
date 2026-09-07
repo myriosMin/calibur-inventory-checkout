@@ -40,3 +40,5 @@ supabase/.temp
 
 # scripts output
 scripts/out/
+qr-test-labels/
+.env*
