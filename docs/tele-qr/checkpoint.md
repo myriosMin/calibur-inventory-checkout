@@ -101,6 +101,33 @@ continuous scan on real iOS/Android) needs to confirm before relying on it.
 
 ---
 
+## Text receipt after submit (new)
+
+After a successful `submit_cart` RPC call in
+`src/app/api/store/cart/submit/route.ts`, the bot now DMs the member a
+plain-text summary — `Borrowed -> <holder>` / `Returned from <holder>` plus
+one `- <name> x<qty> <unit>` line per cart line — via
+`sendMessageSafely` (promoted from the webhook route's previously-local
+`sendReplySafely` into `src/lib/telegram/bot-api.ts`, and now shared by both
+routes). Message text itself is built by the pure, unit-tested
+`buildReceiptText` in `src/lib/telegram/receipt.ts`
+(`tests/unit/receipt.test.ts`). Product names/units and the holder name are
+looked up fresh from the DB rather than trusted from the client, since the
+whole point is an accurate record of what was actually written.
+
+This is deliberately best-effort and non-blocking: the lookup + send is
+wrapped in its own `try/catch` *after* the RPC has already committed, so a
+Telegram-side failure (or a lookup error) is logged and swallowed rather
+than turning a successful submit into a 500 — same contract as the
+webhook's existing sends. Verified against the live dev DB via the
+`cart-submit` integration suite (uses a fabricated `telegram_user_id`, so
+every one of these sends fails "chat not found" by design — confirms the
+swallow path without a real chat to check the message in). **Not yet
+confirmed to actually arrive in a real Telegram chat** — worth a quick
+on-device check alongside WP24.
+
+---
+
 ## Done: Phases 1–3 (all 24 work packages)
 
 **Schema (WP1):** 14 migrations applied to the live Supabase project —

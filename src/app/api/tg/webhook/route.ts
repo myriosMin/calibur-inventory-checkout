@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { sendMessage } from "@/lib/telegram/bot-api";
+import { sendMessageSafely } from "@/lib/telegram/bot-api";
 import type { TelegramUpdate } from "@/lib/telegram/types";
 import { isValidWebhookSecret } from "@/lib/telegram/webhook-verify";
 import { getServiceRoleClient } from "@/lib/supabase/server";
@@ -11,20 +11,6 @@ import { normalizeTelegramHandle } from "@/lib/utils/normalize";
 export const runtime = "nodejs";
 
 const START_COMMAND = "/start";
-
-/**
- * Sends a reply via the Telegram Bot API, swallowing (and logging) any
- * failure. The webhook itself is considered successfully processed
- * regardless of whether the outbound reply lands, so a Telegram-side error
- * (e.g. a fabricated/unreachable chat id) must never fail the request.
- */
-async function sendReplySafely(chatId: number, text: string): Promise<void> {
-  try {
-    await sendMessage(chatId, text);
-  } catch (error) {
-    console.error("[/api/tg/webhook] Failed to send Telegram reply:", error);
-  }
-}
 
 export async function POST(request: Request) {
   const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET ?? "";
@@ -85,7 +71,7 @@ export async function POST(request: Request) {
 
   if (boundMember) {
     const name = boundMember.display_name ?? boundMember.full_name;
-    await sendReplySafely(chatId, `Welcome back, ${name}.`);
+    await sendMessageSafely(chatId, `Welcome back, ${name}.`);
     return NextResponse.json({});
   }
 
@@ -128,7 +114,7 @@ export async function POST(request: Request) {
       }
 
       const name = candidate.display_name ?? candidate.full_name;
-      await sendReplySafely(chatId, `Welcome, ${name}. You're all set.`);
+      await sendMessageSafely(chatId, `Welcome, ${name}. You're all set.`);
       return NextResponse.json({});
     }
   }
@@ -149,7 +135,7 @@ export async function POST(request: Request) {
     return NextResponse.json({});
   }
 
-  await sendReplySafely(
+  await sendMessageSafely(
     chatId,
     "I don't recognise you — ask a committee member to add you.",
   );

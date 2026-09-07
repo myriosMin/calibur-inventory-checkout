@@ -30,3 +30,19 @@ export async function sendMessage(chatId: number, text: string): Promise<void> {
     );
   }
 }
+
+/**
+ * `sendMessage`, but swallowing (and logging) any failure -- for every
+ * caller that has already done the thing the message merely reports on
+ * (bound a member, committed stock movements). That work is done regardless
+ * of whether the outbound Telegram message lands, so a Telegram-side error
+ * (fabricated/unreachable chat id, transient API failure) must never fail
+ * the caller's own request.
+ */
+export async function sendMessageSafely(chatId: number, text: string): Promise<void> {
+  try {
+    await sendMessage(chatId, text);
+  } catch (error) {
+    console.error("[telegram] Failed to send message:", error);
+  }
+}

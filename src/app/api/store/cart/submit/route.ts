@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import { requireMember } from "@/lib/server/member-auth";
 import { getServiceRoleClient } from "@/lib/supabase/server";
+import { sendMessageSafely } from "@/lib/telegram/bot-api";
+import { buildReceiptText } from "@/lib/telegram/receipt";
 
 export const runtime = "nodejs";
 
@@ -83,6 +85,32 @@ export async function POST(request: Request) {
     // transaction contract: the client must not clear its cart on a 500).
     console.error("submit_cart RPC failed:", error);
     return NextResponse.json({ error: "submit_failed" }, { status: 500 });
+  }
+
+  // Best-effort text receipt over Telegram: the cart is already committed
+  // above, so a failure here (a lookup query, or sendMessage itself, which
+  // already swallows its own errors) must never turn a successful submit
+  // into a 500 for the member -- there is deliberately no retry/outbox for
+  // this, it's a nice-to-have summary, not part of the write.
+  try {
+    const holderId = (mode === "borrow" ? destHolderId : sourceHolderId)!;
+    const productIds = [...new Set(lines.map((line) => line.productId))];
+
+    const [{ data: products }, { data: holder }] = await Promise.all([
+      supabase.from("products").select("id, name, unit").in("id", productIds),
+      supabase.from("holders").select("name").eq("id", holderId).single(),
+    ]);
+
+    const productById = new Map((products ?? []).map((product) => [product.id, product]));
+    const receiptLines = lines.map((line) => {
+      const product = productById.get(line.productId);
+      return { name: product?.name ?? "Unknown item", qty: line.qty, unit: product?.unit ?? "" };
+    });
+
+    const text = buildReceiptText({ mode, holderName: holder?.name ?? "—", lines: receiptLines });
+    await sendMessageSafely(auth.telegramUserId, text);
+  } catch (err) {
+    console.error("Failed to send cart receipt:", err);
   }
 
   return NextResponse.json({ sessionId: data, movementCount: lines.length });
