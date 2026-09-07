@@ -36,31 +36,31 @@ export default function AdminLoginPage() {
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center p-6">
-      <h1 className="mb-6 text-xl font-semibold text-slate-900">Admin sign in</h1>
+      <h1 className="mb-6 text-xl font-semibold text-neutral-100">Admin sign in</h1>
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-        <label className="flex flex-col gap-1 text-sm text-slate-700">
+        <label className="flex flex-col gap-1 text-sm text-neutral-200">
           Email
           <input
             type="email"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="min-h-11 rounded-lg border border-slate-300 px-3 text-base"
+            className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
             autoComplete="username"
           />
         </label>
-        <label className="flex flex-col gap-1 text-sm text-slate-700">
+        <label className="flex flex-col gap-1 text-sm text-neutral-200">
           Password
           <input
             type="password"
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="min-h-11 rounded-lg border border-slate-300 px-3 text-base"
+            className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
             autoComplete="current-password"
           />
         </label>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="text-sm text-red-400">{error}</p> : null}
         <Button type="submit" disabled={submitting}>
           {submitting ? "Signing in…" : "Sign in"}
         </Button>

@@ -24,9 +24,12 @@ import SearchSheet, { type SearchProduct } from "./components/SearchSheet";
  * `sessionStorage.removeItem(PENDING_SCAN_STORAGE_KEY)` so a later
  * back-navigation to /store/borrow doesn't silently re-add it.
  *
- * When the user picks "Borrow" from the top-level chooser with no scan in
- * hand, this key is left untouched (absent/stale) -- WP16 should treat a
- * missing/unparseable key as "start with an empty cart," not an error.
+ * The top-level chooser's "Borrow" button always opens the scanner first
+ * (see handleBorrow below) and only navigates here once a product resolves,
+ * so this key is normally always present on arrival -- but the borrow page
+ * still treats an absent/unparseable key as "start with an empty cart," not
+ * an error, since /store/borrow is a real route reachable directly (a
+ * bookmark, browser back/forward) without going through this handoff at all.
  */
 export const PENDING_SCAN_STORAGE_KEY = "tele-qr:pending-scan";
 
@@ -170,7 +173,13 @@ export default function StorePage() {
     initFromLaunchContext();
   }, [initFromLaunchContext]);
 
-  const handleScan = useCallback(() => {
+  // "Borrow" and the old standalone "Scan" button led to the exact same
+  // place -- a borrow cart -- with Scan just skipping straight to the
+  // camera. Since they were functionally identical, Borrow now *is* that
+  // fast path: tapping it opens the scanner immediately rather than
+  // dropping the member into an empty cart they'd have to tap "Scan more"
+  // from. (Return is deliberately camera-free -- see its own handler.)
+  const handleBorrow = useCallback(() => {
     let webApp;
     try {
       webApp = getWebApp();
@@ -201,7 +210,7 @@ export default function StorePage() {
   if (view.name === "loading") {
     return (
       <main className="flex min-h-dvh items-center justify-center p-6">
-        <p className="text-sm text-slate-500">Loading…</p>
+        <p className="text-sm text-neutral-400">Loading…</p>
       </main>
     );
   }
@@ -209,7 +218,7 @@ export default function StorePage() {
   if (view.name === "error") {
     return (
       <main className="flex min-h-dvh flex-col items-center justify-center gap-3 p-6 text-center">
-        <p className="text-sm text-red-600">{view.message}</p>
+        <p className="text-sm text-red-400">{view.message}</p>
       </main>
     );
   }
@@ -217,7 +226,7 @@ export default function StorePage() {
   if (view.name === "retired") {
     return (
       <main className="flex min-h-dvh flex-col items-center justify-center gap-4 p-6 text-center">
-        <p className="text-base text-slate-900">This label is retired or unrecognised.</p>
+        <p className="text-base text-neutral-100">This label is retired or unrecognised.</p>
         <Button onClick={() => setSearchOpen(true)}>Search instead</Button>
         <SearchSheet
           open={searchOpen}
@@ -232,7 +241,7 @@ export default function StorePage() {
   if (view.name === "group-pick") {
     return (
       <Sheet open onClose={() => setView({ name: "top-level" })} title={view.location.name}>
-        <ul className="divide-y divide-slate-100">
+        <ul className="divide-y divide-neutral-800">
           {view.products.map((product) => (
             <li key={product.id}>
               <button
@@ -240,8 +249,8 @@ export default function StorePage() {
                 onClick={() => goToBorrow(null, product)}
                 className="flex min-h-11 w-full items-center justify-between py-2 text-left"
               >
-                <span className="font-medium text-slate-900">{product.name}</span>
-                <span className="text-xs uppercase text-slate-400">{product.tier}</span>
+                <span className="font-medium text-neutral-100">{product.name}</span>
+                <span className="text-xs uppercase text-neutral-600">{product.tier}</span>
               </button>
             </li>
           ))}
@@ -251,24 +260,21 @@ export default function StorePage() {
   }
 
   // view.name === "top-level" (opened from the bot's menu button, no scan).
-  // Scan leads and gets primary weight -- it's the fastest path (0 taps to
-  // camera, item lands straight in the borrow cart), so it should be the
-  // first thing a thumb lands on rather than tied visually with Borrow/Return.
+  // Two buttons, two unambiguous intentions: Borrow opens the camera
+  // immediately (the old standalone "Scan" button was a redundant third
+  // doorway to the same borrow cart); Return never scans by design
+  // (flows.md -- a robot's installed parts have buried stickers), so it
+  // just goes straight to the holdings checklist.
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center gap-4 p-6">
-      <h1 className="text-lg font-semibold text-slate-900">Parts Store</h1>
+      <h1 className="text-lg font-semibold text-neutral-100">Parts Store</h1>
       <div className="flex w-full max-w-xs flex-col gap-3">
-        <Button onClick={handleScan} className="gap-2">
-          <IconCamera size={18} /> Scan
+        <Button onClick={handleBorrow} className="gap-2">
+          <IconCamera size={18} /> Borrow
         </Button>
-        <div className="grid grid-cols-2 gap-3">
-          <Button variant="secondary" onClick={() => router.push("/store/borrow")}>
-            Borrow
-          </Button>
-          <Button variant="secondary" onClick={() => router.push("/store/return")}>
-            Return
-          </Button>
-        </div>
+        <Button variant="secondary" onClick={() => router.push("/store/return")}>
+          Return
+        </Button>
       </div>
       <SearchSheet
         open={searchOpen}

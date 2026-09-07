@@ -49,12 +49,12 @@ export default function Stepper({
         onClick={decrement}
         disabled={!canDecrement}
         aria-label="Decrease quantity"
-        className="flex min-h-11 min-w-11 items-center justify-center rounded-lg bg-slate-100 text-lg font-semibold text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex min-h-11 min-w-11 items-center justify-center rounded-lg bg-neutral-800 text-lg font-semibold text-neutral-200 hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
       >
         −
       </button>
       <span
-        className="min-w-8 text-center text-base font-semibold tabular-nums text-slate-900"
+        className="min-w-8 text-center text-base font-semibold tabular-nums text-neutral-100"
         aria-live="polite"
       >
         {value}
@@ -64,7 +64,7 @@ export default function Stepper({
         onClick={increment}
         disabled={!canIncrement}
         aria-label="Increase quantity"
-        className="flex min-h-11 min-w-11 items-center justify-center rounded-lg bg-slate-100 text-lg font-semibold text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex min-h-11 min-w-11 items-center justify-center rounded-lg bg-neutral-800 text-lg font-semibold text-neutral-200 hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
       >
         +
       </button>

@@ -140,14 +140,14 @@ export default function AdminMemberEditPage({
   }
 
   if (loading) {
-    return <p className="text-sm text-slate-500">Loading…</p>;
+    return <p className="text-sm text-neutral-400">Loading…</p>;
   }
 
   if (loadError || !member || !form) {
     return (
       <div className="space-y-4">
         <Toast variant="error" message={loadError ?? "Member not found."} />
-        <Link href="/admin/members" className="text-sm font-medium text-emerald-700">
+        <Link href="/admin/members" className="text-sm font-medium text-red-400">
           &larr; Back to members
         </Link>
       </div>
@@ -157,15 +157,15 @@ export default function AdminMemberEditPage({
   return (
     <div className="space-y-4">
       <div>
-        <Link href="/admin/members" className="text-sm font-medium text-emerald-700">
+        <Link href="/admin/members" className="text-sm font-medium text-red-400">
           &larr; Back to members
         </Link>
-        <h1 className="mt-1 text-xl font-semibold text-slate-900">
+        <h1 className="mt-1 text-xl font-semibold text-neutral-100">
           Edit member: {member.display_name ?? member.full_name}
         </h1>
       </div>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
+      <section className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
         {saveError ? (
           <div className="mb-4">
             <Toast variant="error" message={saveError} onDismiss={() => setSaveError(null)} />
@@ -183,46 +183,46 @@ export default function AdminMemberEditPage({
 
         <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">Full name *</span>
+            <span className="font-medium text-neutral-200">Full name *</span>
             <input
               required
               value={form.full_name}
               onChange={(e) =>
                 setForm((p) => (p ? { ...p, full_name: e.target.value } : p))
               }
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
             />
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">Display name</span>
+            <span className="font-medium text-neutral-200">Display name</span>
             <input
               value={form.display_name}
               onChange={(e) =>
                 setForm((p) => (p ? { ...p, display_name: e.target.value } : p))
               }
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
             />
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">NUS email</span>
+            <span className="font-medium text-neutral-200">NUS email</span>
             <input
               type="email"
               value={form.nus_email}
               onChange={(e) =>
                 setForm((p) => (p ? { ...p, nus_email: e.target.value } : p))
               }
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
             />
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-neutral-400">
               Must exactly match this member&apos;s Supabase Auth email for
               them to sign into /admin, if their role is admin.
             </span>
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">Telegram username</span>
+            <span className="font-medium text-neutral-200">Telegram username</span>
             <input
               value={form.telegram_username}
               onChange={(e) =>
@@ -231,12 +231,12 @@ export default function AdminMemberEditPage({
                 )
               }
               placeholder="without @"
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
             />
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">Role</span>
+            <span className="font-medium text-neutral-200">Role</span>
             <select
               value={form.role}
               onChange={(e) =>
@@ -244,7 +244,7 @@ export default function AdminMemberEditPage({
                   p ? { ...p, role: e.target.value as Role } : p,
                 )
               }
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
             >
               {ROLES.map((r) => (
                 <option key={r} value={r}>
@@ -255,7 +255,7 @@ export default function AdminMemberEditPage({
           </label>
 
           <div className="flex items-center gap-4 pt-6">
-            <label className="flex items-center gap-2 text-sm text-slate-700">
+            <label className="flex items-center gap-2 text-sm text-neutral-200">
               <input
                 type="checkbox"
                 checked={form.active}
@@ -268,34 +268,34 @@ export default function AdminMemberEditPage({
           </div>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">Joined</span>
+            <span className="font-medium text-neutral-200">Joined</span>
             <input
               type="date"
               value={form.joined_at}
               onChange={(e) =>
                 setForm((p) => (p ? { ...p, joined_at: e.target.value } : p))
               }
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
             />
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">Left</span>
+            <span className="font-medium text-neutral-200">Left</span>
             <input
               type="date"
               value={form.left_at}
               onChange={(e) =>
                 setForm((p) => (p ? { ...p, left_at: e.target.value } : p))
               }
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
             />
           </label>
 
           <div className="flex flex-col gap-1 text-sm sm:col-span-2">
-            <span className="font-medium text-slate-700">
+            <span className="font-medium text-neutral-200">
               Telegram binding (read-only)
             </span>
-            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+            <p className="rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-300">
               telegram_user_id: {member.telegram_user_id ?? "—"}
               <br />
               telegram_bound_at:{" "}
@@ -303,9 +303,9 @@ export default function AdminMemberEditPage({
                 ? new Date(member.telegram_bound_at).toLocaleString()
                 : "—"}
             </p>
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-neutral-400">
               Set only via the{" "}
-              <Link href="/admin/bind-queue" className="text-emerald-700 hover:text-emerald-900">
+              <Link href="/admin/bind-queue" className="text-red-400 hover:text-red-300">
                 bind queue
               </Link>{" "}
               when the member first messages the bot -- not editable here.

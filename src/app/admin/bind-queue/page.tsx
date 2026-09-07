@@ -178,8 +178,8 @@ export default function AdminBindQueuePage() {
 
   return (
     <div>
-      <h1 className="mb-4 text-lg font-semibold text-slate-900">Bind queue</h1>
-      <p className="mb-4 text-sm text-slate-600">
+      <h1 className="mb-4 text-lg font-semibold text-neutral-100">Bind queue</h1>
+      <p className="mb-4 text-sm text-neutral-300">
         Telegram users the bot couldn&apos;t match to a member by handle.
         Search for the right member and bind them below.
       </p>
@@ -203,37 +203,37 @@ export default function AdminBindQueuePage() {
       ) : null}
 
       {loading ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <p className="text-sm text-neutral-400">Loading…</p>
       ) : attempts.length === 0 ? (
-        <p className="text-sm text-slate-500">No unresolved bind attempts.</p>
+        <p className="text-sm text-neutral-400">No unresolved bind attempts.</p>
       ) : (
         <ul className="flex flex-col gap-3">
           {attempts.map((attempt) => (
             <li
               key={attempt.id}
-              className="rounded-lg border border-slate-200 bg-white p-4"
+              className="rounded-lg border border-neutral-800 bg-neutral-900 p-4"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="text-sm text-slate-900">
+                <div className="text-sm text-neutral-100">
                   <div className="font-medium">
                     {attempt.display_name ?? "(no display name)"}
                     {attempt.username ? (
-                      <span className="ml-2 text-slate-500">
+                      <span className="ml-2 text-neutral-400">
                         @{attempt.username}
                       </span>
                     ) : (
-                      <span className="ml-2 text-slate-400">(no username)</span>
+                      <span className="ml-2 text-neutral-600">(no username)</span>
                     )}
                   </div>
-                  <div className="mt-1 text-xs text-slate-500">
+                  <div className="mt-1 text-xs text-neutral-400">
                     telegram_user_id: {attempt.telegram_user_id}
                   </div>
                   {attempt.scan_code ? (
-                    <div className="text-xs text-slate-500">
+                    <div className="text-xs text-neutral-400">
                       scan_code: {attempt.scan_code}
                     </div>
                   ) : null}
-                  <div className="text-xs text-slate-500">
+                  <div className="text-xs text-neutral-400">
                     {new Date(attempt.created_at).toLocaleString()}
                   </div>
                 </div>
@@ -258,26 +258,26 @@ export default function AdminBindQueuePage() {
               </div>
 
               {rowError[attempt.id] ? (
-                <p className="mt-3 text-sm text-red-600">
+                <p className="mt-3 text-sm text-red-400">
                   {rowError[attempt.id]}
                 </p>
               ) : null}
 
               {activeAttemptId === attempt.id ? (
-                <div className="mt-3 border-t border-slate-100 pt-3">
+                <div className="mt-3 border-t border-neutral-800 pt-3">
                   <input
                     type="text"
                     autoFocus
                     placeholder="Search members by name…"
                     value={memberQuery}
                     onChange={(e) => setMemberQuery(e.target.value)}
-                    className="min-h-11 w-full rounded-lg border border-slate-300 px-3 text-base"
+                    className="min-h-11 w-full rounded-lg border border-neutral-700 px-3 text-base"
                   />
                   <ul className="mt-2 flex flex-col gap-1">
                     {searching ? (
-                      <li className="text-sm text-slate-500">Searching…</li>
+                      <li className="text-sm text-neutral-400">Searching…</li>
                     ) : memberResults.length === 0 ? (
-                      <li className="text-sm text-slate-500">No members found.</li>
+                      <li className="text-sm text-neutral-400">No members found.</li>
                     ) : (
                       memberResults.map((member) => {
                         const alreadyBoundElsewhere =
@@ -286,12 +286,12 @@ export default function AdminBindQueuePage() {
                         return (
                           <li
                             key={member.id}
-                            className="flex items-center justify-between gap-3 rounded-lg px-2 py-2 hover:bg-slate-50"
+                            className="flex items-center justify-between gap-3 rounded-lg px-2 py-2 hover:bg-neutral-800"
                           >
-                            <div className="text-sm text-slate-900">
+                            <div className="text-sm text-neutral-100">
                               {member.display_name ?? member.full_name}
                               {alreadyBoundElsewhere ? (
-                                <span className="ml-2 text-xs text-red-600">
+                                <span className="ml-2 text-xs text-red-400">
                                   already linked to another Telegram account
                                 </span>
                               ) : null}

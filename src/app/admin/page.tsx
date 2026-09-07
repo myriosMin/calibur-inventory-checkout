@@ -10,16 +10,16 @@ const SECTIONS = [
 export default function AdminHomePage() {
   return (
     <div>
-      <h1 className="mb-4 text-xl font-semibold text-slate-900">Admin</h1>
+      <h1 className="mb-4 text-xl font-semibold text-neutral-100">Admin</h1>
       <ul className="grid gap-3 sm:grid-cols-2">
         {SECTIONS.map((section) => (
           <li key={section.href}>
             <Link
               href={section.href}
-              className="block rounded-lg border border-slate-200 bg-white p-4 hover:border-emerald-300 hover:bg-emerald-50"
+              className="block rounded-lg border border-neutral-800 bg-neutral-900 p-4 transition-colors hover:border-red-500/50 hover:bg-red-500/5"
             >
-              <span className="block font-medium text-slate-900">{section.label}</span>
-              <span className="block text-sm text-slate-500">{section.description}</span>
+              <span className="block font-medium text-neutral-100">{section.label}</span>
+              <span className="block text-sm text-neutral-400">{section.description}</span>
             </Link>
           </li>
         ))}

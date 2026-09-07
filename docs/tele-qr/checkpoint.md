@@ -11,6 +11,38 @@ promoted to Production for a stable URL). Webhook registered against this URL.
 
 ---
 
+## Re-theme to match nuscalibur.com (not yet committed as of this writing)
+
+Superseded the light emerald/slate palette below with a dark theme matching
+the club's own site, pulled directly from its live CSS bundle (not guessed):
+`--rc-red: #DC2626` accent, near-black surfaces (`#0A0A0A` / `#171717` /
+`#1F1F1F` — these are exactly Tailwind's `neutral-950/900/800`), Rajdhani +
+Space Grotesk fonts, `0 0 20px` red glow on the primary CTA, `tracking-wide`
+uppercase button labels (matches their `letter-spacing: .025em` convention).
+Dark-only, no light/dark toggle (app has no theme switch to hang one off).
+
+- Fonts wired via `next/font/google` in `src/app/layout.tsx`
+  (`--font-display` / `--font-body`); `globals.css` applies Rajdhani to
+  `h1`/`h2`/`h3` only, Space Grotesk everywhere else -- kept off dense body
+  text (item names, quantities) so scannability isn't traded for branding.
+- `danger` Button variant moved to amber, not red -- red is now the primary
+  accent, so a destructive action needs its own hue to stay visually distinct
+  from "the main button."
+- Toast `success` stayed true green rather than reusing the new brand red,
+  since red-as-success would be a semantic collision with error/danger.
+- Recolor was role-based (page bg / card surface / structural border / muted
+  text / primary text), not a blind numeric swap -- light-theme grays don't
+  invert 1:1 into a dark palette. Caught and fixed two real bugs this
+  produced along the way: identical rest/hover colors on `QuantityPrompt`'s
+  bulk-quantity chips (lost hover feedback) and a bind-queue member-search
+  row whose hover went *darker* than its container instead of lighter.
+- Verified: `npm run build`, `npm run lint`, `npm test -- tests/unit` (58/58)
+  all clean, plus an SSR curl smoke-check confirming the neutral/red classes
+  and both font variables actually render. Still no browser-automation tool
+  in this environment -- same on-device caveat as the pass below.
+
+---
+
 ## UI/UX redesign pass (not yet committed as of this writing)
 
 Goals: fewest possible taps for borrow/return, no emoji, uncluttered/minimal
@@ -32,6 +64,12 @@ visual design. Applied across `/store` and (palette only) `/admin`:
   "Took the last of it" as a future restock-flag trigger, not redundant UI.
 - New `CHANGE_DEST` cart-reducer action (distinct from the one-shot
   `SET_DEST`) backs the "Change destination" override; covered by a unit test.
+- **Scan + Borrow merged** on the top-level chooser (`src/app/store/page.tsx`):
+  the standalone "Scan" button was a redundant third doorway to the same
+  borrow cart, differing from "Borrow" only in auto-opening the camera.
+  "Borrow" now opens the camera immediately (renamed handler `handleBorrow`);
+  the chooser is 2 buttons (Borrow, Return), not 3. Return intentionally stays
+  camera-free per `flows.md` ("Returns never scan").
 - Verified: `npm run build`, `npm run lint`, and `npm test -- tests/unit` all
   clean. No browser-automation tool was available in this environment, so the
   redesigned flows were checked via SSR smoke-curls + code review, not

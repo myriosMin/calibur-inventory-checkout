@@ -124,25 +124,25 @@ export default function AdminMembersPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-lg font-semibold text-slate-900">Members</h1>
-        <p className="mt-1 text-sm text-slate-600">
+        <h1 className="text-lg font-semibold text-neutral-100">Members</h1>
+        <p className="mt-1 text-sm text-neutral-300">
           Club members who can use the Mini App and, if promoted to{" "}
-          <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">admin</code>
+          <code className="rounded bg-neutral-800 px-1 py-0.5 text-xs">admin</code>
           , sign in here. Creating a member automatically creates a linked{" "}
-          <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">member</code>{" "}
+          <code className="rounded bg-neutral-800 px-1 py-0.5 text-xs">member</code>{" "}
           holder for them -- no need to add one on the Holders page.{" "}
           <span className="font-medium">
             NUS email
           </span>{" "}
           matters most for admins: it must exactly match the email of their
           Supabase Auth account for{" "}
-          <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">is_admin()</code>{" "}
+          <code className="rounded bg-neutral-800 px-1 py-0.5 text-xs">is_admin()</code>{" "}
           to grant them access to this dashboard. Telegram binding
-          (<code className="rounded bg-slate-100 px-1 py-0.5 text-xs">
+          (<code className="rounded bg-neutral-800 px-1 py-0.5 text-xs">
             telegram_user_id
           </code>
           ) isn&apos;t set here -- it happens via the{" "}
-          <Link href="/admin/bind-queue" className="text-emerald-700 hover:text-emerald-900">
+          <Link href="/admin/bind-queue" className="text-red-400 hover:text-red-300">
             bind queue
           </Link>{" "}
           when the member first messages the bot.
@@ -159,11 +159,11 @@ export default function AdminMembersPage() {
 
       <form
         onSubmit={handleSubmit}
-        className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4"
+        className="flex flex-col gap-3 rounded-xl border border-neutral-800 bg-neutral-900 p-4"
       >
-        <h2 className="text-sm font-semibold text-slate-900">New member</h2>
+        <h2 className="text-sm font-semibold text-neutral-100">New member</h2>
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-sm text-slate-700">
+          <label className="flex flex-col gap-1 text-sm text-neutral-200">
             Full name *
             <input
               type="text"
@@ -172,10 +172,10 @@ export default function AdminMembersPage() {
               onChange={(e) =>
                 setForm((p) => ({ ...p, full_name: e.target.value }))
               }
-              className="min-h-11 rounded-lg border border-slate-300 px-3 text-base"
+              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-700">
+          <label className="flex flex-col gap-1 text-sm text-neutral-200">
             Display name
             <input
               type="text"
@@ -183,10 +183,10 @@ export default function AdminMembersPage() {
               onChange={(e) =>
                 setForm((p) => ({ ...p, display_name: e.target.value }))
               }
-              className="min-h-11 rounded-lg border border-slate-300 px-3 text-base"
+              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-700">
+          <label className="flex flex-col gap-1 text-sm text-neutral-200">
             NUS email
             <input
               type="email"
@@ -195,10 +195,10 @@ export default function AdminMembersPage() {
                 setForm((p) => ({ ...p, nus_email: e.target.value }))
               }
               placeholder="e123456@u.nus.edu"
-              className="min-h-11 rounded-lg border border-slate-300 px-3 text-base"
+              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-700">
+          <label className="flex flex-col gap-1 text-sm text-neutral-200">
             Telegram username
             <input
               type="text"
@@ -207,17 +207,17 @@ export default function AdminMembersPage() {
                 setForm((p) => ({ ...p, telegram_username: e.target.value }))
               }
               placeholder="without @"
-              className="min-h-11 rounded-lg border border-slate-300 px-3 text-base"
+              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-700">
+          <label className="flex flex-col gap-1 text-sm text-neutral-200">
             Role
             <select
               value={form.role}
               onChange={(e) =>
                 setForm((p) => ({ ...p, role: e.target.value as Role }))
               }
-              className="min-h-11 rounded-lg border border-slate-300 px-3 text-base"
+              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
             >
               {ROLES.map((r) => (
                 <option key={r} value={r}>
@@ -225,12 +225,12 @@ export default function AdminMembersPage() {
                 </option>
               ))}
             </select>
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-neutral-400">
               Only matters for /admin sign-in when combined with a matching
               NUS email above -- see the note at the top of this page.
             </span>
           </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-700">
+          <label className="flex flex-col gap-1 text-sm text-neutral-200">
             Joined
             <input
               type="date"
@@ -238,11 +238,11 @@ export default function AdminMembersPage() {
               onChange={(e) =>
                 setForm((p) => ({ ...p, joined_at: e.target.value }))
               }
-              className="min-h-11 rounded-lg border border-slate-300 px-3 text-base"
+              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
             />
           </label>
         </div>
-        {formError ? <p className="text-sm text-red-600">{formError}</p> : null}
+        {formError ? <p className="text-sm text-red-400">{formError}</p> : null}
         <div>
           <Button type="submit" disabled={submitting}>
             {submitting ? "Creating…" : "Create member"}
@@ -250,21 +250,21 @@ export default function AdminMembersPage() {
         </div>
       </form>
 
-      <div className="rounded-xl border border-slate-200 bg-white">
-        <h2 className="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-900">
+      <div className="rounded-xl border border-neutral-800 bg-neutral-900">
+        <h2 className="border-b border-neutral-800 px-4 py-3 text-sm font-semibold text-neutral-100">
           All members ({members.length})
         </h2>
         {loading ? (
-          <p className="p-4 text-sm text-slate-500">Loading…</p>
+          <p className="p-4 text-sm text-neutral-400">Loading…</p>
         ) : loadError ? (
-          <p className="p-4 text-sm text-red-600">{loadError}</p>
+          <p className="p-4 text-sm text-red-400">{loadError}</p>
         ) : members.length === 0 ? (
-          <p className="p-4 text-sm text-slate-500">No members yet.</p>
+          <p className="p-4 text-sm text-neutral-400">No members yet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-200 text-slate-500">
+                <tr className="border-b border-neutral-800 text-neutral-400">
                   <th className="px-4 py-2 font-medium">Full name</th>
                   <th className="px-4 py-2 font-medium">Display name</th>
                   <th className="px-4 py-2 font-medium">NUS email</th>
@@ -277,38 +277,38 @@ export default function AdminMembersPage() {
               </thead>
               <tbody>
                 {members.map((member) => (
-                  <tr key={member.id} className="border-b border-slate-100 last:border-0">
-                    <td className="px-4 py-2 text-slate-900">{member.full_name}</td>
-                    <td className="px-4 py-2 text-slate-600">
+                  <tr key={member.id} className="border-b border-neutral-800 last:border-0">
+                    <td className="px-4 py-2 text-neutral-100">{member.full_name}</td>
+                    <td className="px-4 py-2 text-neutral-300">
                       {member.display_name ?? "—"}
                     </td>
-                    <td className="px-4 py-2 text-slate-600">
+                    <td className="px-4 py-2 text-neutral-300">
                       {member.nus_email ?? "—"}
                     </td>
-                    <td className="px-4 py-2 text-slate-600">
+                    <td className="px-4 py-2 text-neutral-300">
                       {member.telegram_username
                         ? `@${member.telegram_username}`
                         : "—"}
                     </td>
                     <td className="px-4 py-2">
                       {member.telegram_user_id != null ? (
-                        <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                        <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-400">
                           Bound
                         </span>
                       ) : (
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                        <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-xs font-medium text-neutral-300">
                           Unbound
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-2 text-slate-600">{member.role}</td>
+                    <td className="px-4 py-2 text-neutral-300">{member.role}</td>
                     <td className="px-4 py-2">
                       {member.active ? (
-                        <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                        <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-400">
                           Active
                         </span>
                       ) : (
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                        <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-xs font-medium text-neutral-300">
                           Inactive
                         </span>
                       )}
@@ -316,7 +316,7 @@ export default function AdminMembersPage() {
                     <td className="px-4 py-2 text-right">
                       <Link
                         href={`/admin/members/${member.id}`}
-                        className="text-sm font-medium text-emerald-700 hover:text-emerald-900"
+                        className="text-sm font-medium text-red-400 hover:text-red-300"
                       >
                         Edit
                       </Link>

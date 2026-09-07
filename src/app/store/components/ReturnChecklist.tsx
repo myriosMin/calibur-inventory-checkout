@@ -80,12 +80,12 @@ export default function ReturnChecklist({
 
   return (
     <div>
-      <ul className="divide-y divide-slate-100">
+      <ul className="divide-y divide-neutral-800">
         {items.map((item) => (
           <li key={item.productId} className="flex items-center justify-between gap-3 py-3">
             <div className="min-w-0">
-              <p className="truncate font-medium text-slate-900">{item.name}</p>
-              <p className="text-xs text-slate-500">
+              <p className="truncate font-medium text-neutral-100">{item.name}</p>
+              <p className="text-xs text-neutral-400">
                 held {item.qty} {item.unit}
               </p>
             </div>
@@ -101,7 +101,7 @@ export default function ReturnChecklist({
         {extraLines.map((line) => (
           <li key={line.productId} className="flex items-center justify-between gap-3 py-3">
             <div className="min-w-0">
-              <p className="truncate font-medium text-slate-900">{line.name}</p>
+              <p className="truncate font-medium text-neutral-100">{line.name}</p>
               <p className="text-xs text-amber-600">no borrow record on file</p>
             </div>
             <Stepper
@@ -115,7 +115,7 @@ export default function ReturnChecklist({
       </ul>
 
       {isEmpty ? (
-        <p className="py-4 text-sm text-slate-500">Nothing held at this source yet.</p>
+        <p className="py-4 text-sm text-neutral-400">Nothing held at this source yet.</p>
       ) : null}
 
       <div className="mt-3 flex flex-wrap gap-2">

@@ -260,8 +260,8 @@ export default function AdminScanCodesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Scan codes</h1>
-        <p className="mt-1 text-sm text-slate-600">
+        <h1 className="text-xl font-semibold text-neutral-100">Scan codes</h1>
+        <p className="mt-1 text-sm text-neutral-300">
           Every code points at exactly one product (a single-item label) or one location (a
           group label, e.g. a resistor-book page). Codes are opaque and auto-generated -- never
           typed in by hand. Retiring a code never deletes it: a stale sticker resolves to a clean
@@ -278,7 +278,7 @@ export default function AdminScanCodesPage() {
       ) : null}
 
       {lastCreatedCode ? (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
           Generated code: <span className="font-mono text-base font-semibold">{lastCreatedCode}</span>
           {" "}— print this on the label.
         </div>
@@ -286,12 +286,12 @@ export default function AdminScanCodesPage() {
 
       <form
         onSubmit={handleCreate}
-        className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+        className="space-y-4 rounded-xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm"
       >
-        <h2 className="text-sm font-semibold text-slate-900">Create a new code</h2>
+        <h2 className="text-sm font-semibold text-neutral-100">Create a new code</h2>
 
         <div className="flex flex-wrap gap-4">
-          <label className="flex items-center gap-2 text-sm text-slate-700">
+          <label className="flex items-center gap-2 text-sm text-neutral-200">
             <input
               type="radio"
               name="kind"
@@ -301,7 +301,7 @@ export default function AdminScanCodesPage() {
             />
             Product (single item)
           </label>
-          <label className="flex items-center gap-2 text-sm text-slate-700">
+          <label className="flex items-center gap-2 text-sm text-neutral-200">
             <input
               type="radio"
               name="kind"
@@ -315,14 +315,14 @@ export default function AdminScanCodesPage() {
 
         {kind === "product" ? (
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="product-select">
+            <label className="mb-1 block text-sm font-medium text-neutral-200" htmlFor="product-select">
               Product
             </label>
             <select
               id="product-select"
               value={productId}
               onChange={(e) => setProductId(e.target.value)}
-              className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className="w-full max-w-md rounded-lg border border-neutral-700 px-3 py-2 text-sm"
             >
               <option value="">Select a product…</option>
               {activeProducts.map((p) => (
@@ -334,14 +334,14 @@ export default function AdminScanCodesPage() {
           </div>
         ) : (
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="location-select">
+            <label className="mb-1 block text-sm font-medium text-neutral-200" htmlFor="location-select">
               Location
             </label>
             <select
               id="location-select"
               value={locationId}
               onChange={(e) => setLocationId(e.target.value)}
-              className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className="w-full max-w-md rounded-lg border border-neutral-700 px-3 py-2 text-sm"
             >
               <option value="">Select a location…</option>
               {locations.map((l) => (
@@ -354,7 +354,7 @@ export default function AdminScanCodesPage() {
         )}
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="label-input">
+          <label className="mb-1 block text-sm font-medium text-neutral-200" htmlFor="label-input">
             Label (free text, optional)
           </label>
           <input
@@ -363,7 +363,7 @@ export default function AdminScanCodesPage() {
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="e.g. Table Shelf A3"
-            className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="w-full max-w-md rounded-lg border border-neutral-700 px-3 py-2 text-sm"
           />
         </div>
 
@@ -372,18 +372,18 @@ export default function AdminScanCodesPage() {
         </Button>
       </form>
 
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-4 py-3">
-          <h2 className="text-sm font-semibold text-slate-900">All codes</h2>
+      <div className="rounded-xl border border-neutral-800 bg-neutral-900 shadow-sm">
+        <div className="border-b border-neutral-800 px-4 py-3">
+          <h2 className="text-sm font-semibold text-neutral-100">All codes</h2>
         </div>
         {loading ? (
-          <p className="p-4 text-sm text-slate-500">Loading…</p>
+          <p className="p-4 text-sm text-neutral-400">Loading…</p>
         ) : scanCodes.length === 0 ? (
-          <p className="p-4 text-sm text-slate-500">No scan codes yet.</p>
+          <p className="p-4 text-sm text-neutral-400">No scan codes yet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-200 text-slate-500">
+              <thead className="border-b border-neutral-800 text-neutral-400">
                 <tr>
                   <th className="px-4 py-2 font-medium">Code</th>
                   <th className="px-4 py-2 font-medium">Kind</th>
@@ -395,18 +395,18 @@ export default function AdminScanCodesPage() {
               </thead>
               <tbody>
                 {scanCodes.map((row) => (
-                  <tr key={row.code} className="border-b border-slate-100 last:border-0">
+                  <tr key={row.code} className="border-b border-neutral-800 last:border-0">
                     <td className="px-4 py-2 font-mono">{row.code}</td>
                     <td className="px-4 py-2 capitalize">{row.kind}</td>
                     <td className="px-4 py-2">{describeTarget(row)}</td>
-                    <td className="px-4 py-2 text-slate-600">{row.label ?? "—"}</td>
+                    <td className="px-4 py-2 text-neutral-300">{row.label ?? "—"}</td>
                     <td className="px-4 py-2">
                       {row.active ? (
-                        <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                        <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-400">
                           Active
                         </span>
                       ) : (
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                        <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-xs font-medium text-neutral-300">
                           Retired
                         </span>
                       )}
@@ -432,7 +432,7 @@ export default function AdminScanCodesPage() {
                           </Button>
                         </div>
                       ) : (
-                        <span className="text-xs text-slate-400">—</span>
+                        <span className="text-xs text-neutral-600">—</span>
                       )}
                     </td>
                   </tr>

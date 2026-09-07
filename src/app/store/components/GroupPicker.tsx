@@ -31,9 +31,9 @@ export default function GroupPicker({ open, locationName, products, onSelect, on
   return (
     <Sheet open={open} onClose={onClose} title={locationName ?? "Pick an item"}>
       {products.length === 0 ? (
-        <p className="py-2 text-sm text-slate-500">Nothing active at this location.</p>
+        <p className="py-2 text-sm text-neutral-400">Nothing active at this location.</p>
       ) : null}
-      <ul className="divide-y divide-slate-100">
+      <ul className="divide-y divide-neutral-800">
         {products.map((product) => (
           <li key={product.id}>
             <button
@@ -41,8 +41,8 @@ export default function GroupPicker({ open, locationName, products, onSelect, on
               onClick={() => onSelect(product)}
               className="flex min-h-11 w-full items-center justify-between py-3 text-left"
             >
-              <span className="font-medium text-slate-900">{product.name}</span>
-              <span className="text-xs uppercase text-slate-400">{product.unit}</span>
+              <span className="font-medium text-neutral-100">{product.name}</span>
+              <span className="text-xs uppercase text-neutral-600">{product.unit}</span>
             </button>
           </li>
         ))}

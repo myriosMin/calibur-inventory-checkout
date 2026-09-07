@@ -61,7 +61,7 @@ export default function QuantityPrompt({ open, product, onConfirm, onClose }: Qu
                 key={chip}
                 type="button"
                 onClick={() => handleConfirm(chip)}
-                className="flex min-h-11 min-w-14 items-center justify-center rounded-lg bg-slate-100 px-4 text-base font-semibold text-slate-900 hover:bg-slate-200"
+                className="flex min-h-11 min-w-14 items-center justify-center rounded-lg bg-neutral-800 px-4 text-base font-semibold text-neutral-100 hover:bg-neutral-700"
               >
                 {chip}
               </button>
@@ -75,7 +75,7 @@ export default function QuantityPrompt({ open, product, onConfirm, onClose }: Qu
               value={typedQty}
               onChange={(e) => setTypedQty(e.target.value)}
               placeholder={`Type… (${product.unit})`}
-              className="min-h-11 w-full rounded-lg border border-slate-300 px-3 text-base"
+              className="min-h-11 w-full rounded-lg border border-neutral-700 px-3 text-base"
             />
             <Button
               variant="primary"

@@ -48,20 +48,20 @@ export default function Cart({
   const isEmpty = lines.length === 0;
 
   return (
-    <div className="flex min-h-screen flex-col bg-white px-4 pb-6 pt-4">
+    <div className="flex min-h-screen flex-col bg-neutral-950 px-4 pb-6 pt-4">
       <div className="mb-3 flex items-start justify-between gap-3">
-        <h1 className="text-lg font-semibold text-slate-900">
+        <h1 className="text-lg font-semibold text-neutral-100">
           Borrowing
           {destHolderName ? (
             <>
               {" "}
-              <span className="text-slate-500">&rarr;</span> {destHolderName}
+              <span className="text-neutral-400">&rarr;</span> {destHolderName}
               {onChangeDestination ? (
                 <button
                   type="button"
                   onClick={onChangeDestination}
                   disabled={submitting}
-                  className="ml-2 align-middle text-xs font-medium text-emerald-700 hover:text-emerald-900 disabled:text-slate-300"
+                  className="ml-2 align-middle text-xs font-medium text-red-400 hover:text-red-300 disabled:text-neutral-700"
                 >
                   Change
                 </button>
@@ -75,16 +75,16 @@ export default function Cart({
       </div>
 
       {isEmpty ? (
-        <p className="flex-1 py-8 text-center text-sm text-slate-500">
+        <p className="flex-1 py-8 text-center text-sm text-neutral-400">
           Cart is empty. Scan a sticker or search to add an item.
         </p>
       ) : (
-        <ul className="mb-4 flex-1 divide-y divide-slate-100">
+        <ul className="mb-4 flex-1 divide-y divide-neutral-800">
           {lines.map((line) => (
             <li key={line.productId} className="flex items-center justify-between gap-3 py-3">
               <div className="min-w-0">
-                <p className="truncate font-medium text-slate-900">{line.name}</p>
-                <p className="text-xs text-slate-500">
+                <p className="truncate font-medium text-neutral-100">{line.name}</p>
+                <p className="text-xs text-neutral-400">
                   × {line.qty} {line.unit}
                 </p>
               </div>

@@ -233,10 +233,10 @@ export default function ReturnPage() {
 
   return (
     <div className="mx-auto max-w-md p-4 pb-24">
-      <h1 className="mb-4 text-xl font-semibold text-slate-900">Return</h1>
+      <h1 className="mb-4 text-xl font-semibold text-neutral-100">Return</h1>
 
       {stage.name === "loading-sources" ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <p className="text-sm text-neutral-400">Loading…</p>
       ) : null}
 
       {stage.name === "sources-error" ? (
@@ -245,8 +245,8 @@ export default function ReturnPage() {
 
       {stage.name === "picking-source" ? (
         <div>
-          <p className="mb-2 text-sm text-slate-600">Returning from where?</p>
-          <ul className="divide-y divide-slate-100">
+          <p className="mb-2 text-sm text-neutral-300">Returning from where?</p>
+          <ul className="divide-y divide-neutral-800">
             {stage.sources.map((source) => (
               <li key={source.id}>
                 <button
@@ -254,8 +254,8 @@ export default function ReturnPage() {
                   onClick={() => pickSource(source, stage.sources)}
                   className="flex min-h-11 w-full items-center justify-between py-3 text-left"
                 >
-                  <span className="font-medium text-slate-900">{source.name}</span>
-                  <span className="text-xs uppercase text-slate-400">{source.kind}</span>
+                  <span className="font-medium text-neutral-100">{source.name}</span>
+                  <span className="text-xs uppercase text-neutral-600">{source.kind}</span>
                 </button>
               </li>
             ))}
@@ -264,7 +264,7 @@ export default function ReturnPage() {
       ) : null}
 
       {stage.name === "loading-holdings" ? (
-        <p className="text-sm text-slate-500">Loading {stage.source.name}&rsquo;s holdings…</p>
+        <p className="text-sm text-neutral-400">Loading {stage.source.name}&rsquo;s holdings…</p>
       ) : null}
 
       {stage.name === "holdings-error" ? (
@@ -280,7 +280,7 @@ export default function ReturnPage() {
 
       {stage.name === "checklist" ? (
         <div>
-          <p className="mb-2 text-sm text-slate-600">Returning from {stage.source.name}</p>
+          <p className="mb-2 text-sm text-neutral-300">Returning from {stage.source.name}</p>
           <ReturnChecklist
             items={items}
             extraLines={extraLines}

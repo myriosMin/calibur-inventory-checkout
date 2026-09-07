@@ -19,10 +19,12 @@ export interface DestinationPickerProps {
 }
 
 /**
- * "Where is this going?" (docs/tele-qr/flows.md §2). Shown once per session,
- * on the first item added while `destHolderId` is still null. Once a
- * destination is chosen it is fixed for the rest of the cart -- this sheet
- * is never reopened afterwards.
+ * "Where is this going?" (docs/tele-qr/flows.md §2). Normally shown once per
+ * session, on the first item added while `destHolderId` is still null --
+ * though it's skipped entirely when a remembered last destination exists
+ * (see borrow/page.tsx). Once set, the destination is fixed for the rest of
+ * the cart's normal flow, but this same sheet is reopened by Cart's "Change"
+ * link if the member wants to override it (CHANGE_DEST in cartReducer).
  *
  * `options` comes from `/api/store/destinations` (every active robot plus
  * the member's personal holder) -- not `/api/store/holdings/sources`, which
@@ -40,18 +42,18 @@ export default function DestinationPicker({
 }: DestinationPickerProps) {
   return (
     <Sheet open={open} onClose={onClose} title="Where is this going?">
-      {loading ? <p className="py-2 text-sm text-slate-500">Loading destinations…</p> : null}
-      {error ? <p className="py-2 text-sm text-red-600">{error}</p> : null}
+      {loading ? <p className="py-2 text-sm text-neutral-400">Loading destinations…</p> : null}
+      {error ? <p className="py-2 text-sm text-red-400">{error}</p> : null}
       {!loading && !error && options.length === 0 ? (
-        <p className="py-2 text-sm text-slate-500">No destinations available.</p>
+        <p className="py-2 text-sm text-neutral-400">No destinations available.</p>
       ) : null}
-      <ul className="divide-y divide-slate-100">
+      <ul className="divide-y divide-neutral-800">
         {options.map((option) => (
           <li key={option.id}>
             <button
               type="button"
               onClick={() => onSelect(option)}
-              className="flex min-h-11 w-full items-center justify-between py-3 text-left font-medium text-slate-900"
+              className="flex min-h-11 w-full items-center justify-between py-3 text-left font-medium text-neutral-100"
             >
               {option.name}
             </button>

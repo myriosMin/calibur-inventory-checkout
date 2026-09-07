@@ -15,9 +15,12 @@ export interface ToastProps {
 }
 
 const VARIANT_CLASSES: Record<ToastVariant, string> = {
-  success: "bg-emerald-50 text-emerald-900 border-emerald-200",
-  error: "bg-red-50 text-red-900 border-red-200",
-  info: "bg-slate-50 text-slate-900 border-slate-200",
+  // Kept as true green -- "success" must never read as the brand red used
+  // for primary actions elsewhere, even though red would otherwise be the
+  // obvious accent to reach for on this theme.
+  success: "bg-green-500/10 text-green-400 border-green-500/30",
+  error: "bg-red-500/10 text-red-400 border-red-500/30",
+  info: "bg-neutral-800 text-neutral-200 border-neutral-700",
 };
 
 const VARIANT_ICON: Record<ToastVariant, ComponentType<IconProps>> = {
@@ -47,7 +50,7 @@ export default function Toast({
     >
       <span
         aria-hidden="true"
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/70"
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/10"
       >
         <Icon size={14} />
       </span>

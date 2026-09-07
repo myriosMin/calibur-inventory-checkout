@@ -30,8 +30,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   };
 
   return (
-    <div className="min-h-dvh bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
+    <div className="min-h-dvh bg-neutral-950">
+      <header className="border-b border-neutral-800 bg-neutral-900">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <nav className="flex flex-wrap gap-4">
             {NAV_LINKS.map((link) => (
@@ -40,8 +40,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 href={link.href}
                 className={`text-sm font-medium ${
                   pathname === link.href
-                    ? "text-emerald-700"
-                    : "text-slate-600 hover:text-slate-900"
+                    ? "text-red-400"
+                    : "text-neutral-300 hover:text-neutral-100"
                 }`}
               >
                 {link.label}
@@ -51,7 +51,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <button
             type="button"
             onClick={handleSignOut}
-            className="text-sm font-medium text-slate-500 hover:text-slate-900"
+            className="text-sm font-medium text-neutral-400 hover:text-neutral-100"
           >
             Sign out
           </button>
