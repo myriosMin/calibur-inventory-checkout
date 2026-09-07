@@ -128,6 +128,28 @@ on-device check alongside WP24.
 
 ---
 
+## Remembered-destination auto-fill now surfaces itself (fix)
+
+Raised by the user: the remembered-last-destination auto-fill
+(`LAST_DEST_KEY` in `src/app/store/borrow/page.tsx`, `localStorage`,
+persists indefinitely across every future cart on the device) was
+completely silent beyond a small "Change" link in the cart header — easy to
+not notice, especially now that continuous scan (previous entry) reopens
+the camera automatically and gives you less time looking at that header.
+Fixed by surfacing an info toast ("Assuming `<holder>` as destination.")
+with a "Change" action the moment the auto-fill fires, once per cart. Only
+wrinkle: if the auto-filled item needs a quantity prompt, that prompt and
+the toast can be on screen together, so tapping the toast's "Change" drops
+the in-flight item (same as backing out of the quantity prompt) rather than
+stacking the destination-picker sheet on top of it — re-scan/re-pick it
+after choosing the right destination. `handleDestinationSelect` was also
+fixed to resume continuous scan when it has no pending item to proceed
+with (previously only `proceedToQuantity` did this, which this new toast
+path bypasses). `npm run build`, `npm run lint`, `npm test -- tests/unit`
+clean; not yet exercised on-device.
+
+---
+
 ## Done: Phases 1–3 (all 24 work packages)
 
 **Schema (WP1):** 14 migrations applied to the live Supabase project —

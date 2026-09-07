@@ -179,6 +179,26 @@ export default function BorrowPage() {
           // Prefetch in the background so tapping "Change" in Cart opens
           // instantly instead of showing a loading state.
           void loadDestinationOptions();
+          // The auto-fill is silent and sticks across every future cart on
+          // this device (readLastDestination persists to localStorage
+          // indefinitely) -- without this, it's easy to keep assuming a
+          // destination from days ago and never notice. Surface it once, up
+          // front, with an immediate way to correct it.
+          setToast({
+            variant: "info",
+            message: `Assuming ${remembered.name} as destination.`,
+            actionLabel: "Change",
+            onAction: () => {
+              setToast(null);
+              // Abort whatever quantity question this item may have queued
+              // up (mirrors handleQuantityClose) -- reopening the
+              // destination picker while both sheets are stacked would
+              // otherwise render on top of each other.
+              setPendingIntake(null);
+              setDestPickerOpen(true);
+              void loadDestinationOptions();
+            },
+          });
           proceedToQuantity(pending);
           return;
         }
@@ -241,7 +261,16 @@ export default function BorrowPage() {
         : { type: "CHANGE_DEST", destHolderId: option.id, destHolderName: option.name },
     );
     setDestPickerOpen(false);
-    if (pendingIntake) proceedToQuantity(pendingIntake);
+    if (pendingIntake) {
+      proceedToQuantity(pendingIntake);
+    } else {
+      // No item attached to this pick -- either the plain Cart "Change"
+      // link, or the auto-fill toast's "Change" (which drops the item that
+      // was mid-question so the two sheets never stack; see beginIntake).
+      // proceedToQuantity would otherwise be the one to resume the camera,
+      // so it has to happen here instead.
+      requestScanResume();
+    }
   };
 
   const handleDestinationClose = () => {
