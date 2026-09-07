@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
+
+import { IconAlert, IconCheck, IconInfo, IconX, type IconProps } from "./icons";
 
 export type ToastVariant = "success" | "error" | "info";
 
@@ -13,15 +15,15 @@ export interface ToastProps {
 }
 
 const VARIANT_CLASSES: Record<ToastVariant, string> = {
-  success: "bg-green-50 text-green-900 border-green-200",
+  success: "bg-emerald-50 text-emerald-900 border-emerald-200",
   error: "bg-red-50 text-red-900 border-red-200",
-  info: "bg-gray-50 text-gray-900 border-gray-200",
+  info: "bg-slate-50 text-slate-900 border-slate-200",
 };
 
-const VARIANT_ICON: Record<ToastVariant, string> = {
-  success: "✓",
-  error: "!",
-  info: "i",
+const VARIANT_ICON: Record<ToastVariant, ComponentType<IconProps>> = {
+  success: IconCheck,
+  error: IconAlert,
+  info: IconInfo,
 };
 
 /**
@@ -37,6 +39,7 @@ export default function Toast({
   onAction,
   className = "",
 }: ToastProps) {
+  const Icon = VARIANT_ICON[variant];
   return (
     <div
       role={variant === "error" ? "alert" : "status"}
@@ -44,9 +47,9 @@ export default function Toast({
     >
       <span
         aria-hidden="true"
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/70 text-sm font-bold"
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/70"
       >
-        {VARIANT_ICON[variant]}
+        <Icon size={14} />
       </span>
       <div className="min-w-0 flex-1 text-sm leading-snug">{message}</div>
       {actionLabel && onAction ? (
@@ -63,9 +66,9 @@ export default function Toast({
           type="button"
           onClick={onDismiss}
           aria-label="Dismiss"
-          className="flex min-h-11 min-w-11 shrink-0 items-center justify-center text-lg leading-none opacity-60 hover:opacity-100"
+          className="flex min-h-11 min-w-11 shrink-0 items-center justify-center opacity-60 hover:opacity-100"
         >
-          ✕
+          <IconX size={16} />
         </button>
       ) : null}
     </div>

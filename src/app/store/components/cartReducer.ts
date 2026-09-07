@@ -49,6 +49,11 @@ export type CartAction =
       entryMethod: EntryMethod;
     }
   | { type: "SET_DEST"; destHolderId: string; destHolderName: string }
+  /** Explicit member-initiated override of an already-set destination (the
+   * "Change" link in Cart, shown when the destination was auto-filled from a
+   * remembered last choice). Unlike SET_DEST, this always applies -- SET_DEST
+   * stays a one-shot guard for the auto-fill-on-first-item path. */
+  | { type: "CHANGE_DEST"; destHolderId: string; destHolderName: string }
   | { type: "SET_LINE_QTY"; productId: string; qty: number }
   | { type: "REMOVE_LINE"; productId: string }
   | { type: "CLEAR" };
@@ -86,6 +91,9 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
     }
     case "SET_DEST": {
       if (state.destHolderId !== null) return state; // fixed for the session, never re-asked
+      return { ...state, destHolderId: action.destHolderId, destHolderName: action.destHolderName };
+    }
+    case "CHANGE_DEST": {
       return { ...state, destHolderId: action.destHolderId, destHolderName: action.destHolderName };
     }
     case "SET_LINE_QTY": {

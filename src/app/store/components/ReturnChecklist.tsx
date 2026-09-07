@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import Button from "@/components/ui/Button";
 import Stepper from "@/components/ui/Stepper";
+import { IconPlus } from "@/components/ui/icons";
 import SearchSheet, { type SearchProduct } from "./SearchSheet";
 
 /** One row sourced from `GET /api/store/holdings?holderId=...` -- something
@@ -53,7 +54,7 @@ export interface ReturnChecklistProps {
  *
  *   • GM6020            held 2   returning [0] [-] [+]
  *   • Center board 2    held 1   returning [0] [-] [+]
- *   [Return all]  [Something else →search]  [✅ Done]
+ *   [Return all]  [Add item]  [Done]
  *
  * "Done" itself lives in the parent page (it needs to know about the chosen
  * source holder too) -- this component renders the rows plus the two
@@ -79,12 +80,12 @@ export default function ReturnChecklist({
 
   return (
     <div>
-      <ul className="divide-y divide-gray-100">
+      <ul className="divide-y divide-slate-100">
         {items.map((item) => (
           <li key={item.productId} className="flex items-center justify-between gap-3 py-3">
             <div className="min-w-0">
-              <p className="truncate font-medium text-gray-900">{item.name}</p>
-              <p className="text-xs text-gray-500">
+              <p className="truncate font-medium text-slate-900">{item.name}</p>
+              <p className="text-xs text-slate-500">
                 held {item.qty} {item.unit}
               </p>
             </div>
@@ -100,7 +101,7 @@ export default function ReturnChecklist({
         {extraLines.map((line) => (
           <li key={line.productId} className="flex items-center justify-between gap-3 py-3">
             <div className="min-w-0">
-              <p className="truncate font-medium text-gray-900">{line.name}</p>
+              <p className="truncate font-medium text-slate-900">{line.name}</p>
               <p className="text-xs text-amber-600">no borrow record on file</p>
             </div>
             <Stepper
@@ -114,7 +115,7 @@ export default function ReturnChecklist({
       </ul>
 
       {isEmpty ? (
-        <p className="py-4 text-sm text-gray-500">Nothing held at this source yet.</p>
+        <p className="py-4 text-sm text-slate-500">Nothing held at this source yet.</p>
       ) : null}
 
       <div className="mt-3 flex flex-wrap gap-2">
@@ -125,8 +126,8 @@ export default function ReturnChecklist({
         >
           Return all
         </Button>
-        <Button variant="secondary" onClick={() => setSearchOpen(true)}>
-          Something else → search
+        <Button variant="secondary" onClick={() => setSearchOpen(true)} className="gap-1.5">
+          <IconPlus size={16} /> Add item
         </Button>
       </div>
 

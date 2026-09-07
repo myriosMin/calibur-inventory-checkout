@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import Button from "@/components/ui/Button";
 import Sheet from "@/components/ui/Sheet";
+import { IconCamera } from "@/components/ui/icons";
 import { getWebApp, parseStartAppCode } from "@/lib/telegram/webapp-client";
 
 import SearchSheet, { type SearchProduct } from "./components/SearchSheet";
@@ -200,7 +201,7 @@ export default function StorePage() {
   if (view.name === "loading") {
     return (
       <main className="flex min-h-dvh items-center justify-center p-6">
-        <p className="text-sm text-gray-500">Loading…</p>
+        <p className="text-sm text-slate-500">Loading…</p>
       </main>
     );
   }
@@ -216,7 +217,7 @@ export default function StorePage() {
   if (view.name === "retired") {
     return (
       <main className="flex min-h-dvh flex-col items-center justify-center gap-4 p-6 text-center">
-        <p className="text-base text-gray-900">This label is retired or unrecognised.</p>
+        <p className="text-base text-slate-900">This label is retired or unrecognised.</p>
         <Button onClick={() => setSearchOpen(true)}>Search instead</Button>
         <SearchSheet
           open={searchOpen}
@@ -231,7 +232,7 @@ export default function StorePage() {
   if (view.name === "group-pick") {
     return (
       <Sheet open onClose={() => setView({ name: "top-level" })} title={view.location.name}>
-        <ul className="divide-y divide-gray-100">
+        <ul className="divide-y divide-slate-100">
           {view.products.map((product) => (
             <li key={product.id}>
               <button
@@ -239,8 +240,8 @@ export default function StorePage() {
                 onClick={() => goToBorrow(null, product)}
                 className="flex min-h-11 w-full items-center justify-between py-2 text-left"
               >
-                <span className="font-medium text-gray-900">{product.name}</span>
-                <span className="text-xs uppercase text-gray-400">{product.tier}</span>
+                <span className="font-medium text-slate-900">{product.name}</span>
+                <span className="text-xs uppercase text-slate-400">{product.tier}</span>
               </button>
             </li>
           ))}
@@ -249,18 +250,25 @@ export default function StorePage() {
     );
   }
 
-  // view.name === "top-level" (opened from the bot's menu button, no scan)
+  // view.name === "top-level" (opened from the bot's menu button, no scan).
+  // Scan leads and gets primary weight -- it's the fastest path (0 taps to
+  // camera, item lands straight in the borrow cart), so it should be the
+  // first thing a thumb lands on rather than tied visually with Borrow/Return.
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center gap-4 p-6">
-      <h1 className="text-lg font-semibold text-gray-900">Parts Store</h1>
+      <h1 className="text-lg font-semibold text-slate-900">Parts Store</h1>
       <div className="flex w-full max-w-xs flex-col gap-3">
-        <Button onClick={() => router.push("/store/borrow")}>Borrow</Button>
-        <Button variant="secondary" onClick={() => router.push("/store/return")}>
-          Return
+        <Button onClick={handleScan} className="gap-2">
+          <IconCamera size={18} /> Scan
         </Button>
-        <Button variant="secondary" onClick={handleScan}>
-          Scan
-        </Button>
+        <div className="grid grid-cols-2 gap-3">
+          <Button variant="secondary" onClick={() => router.push("/store/borrow")}>
+            Borrow
+          </Button>
+          <Button variant="secondary" onClick={() => router.push("/store/return")}>
+            Return
+          </Button>
+        </div>
       </div>
       <SearchSheet
         open={searchOpen}

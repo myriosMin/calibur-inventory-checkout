@@ -3,6 +3,8 @@
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 
+import { IconX } from "./icons";
+
 export interface SheetProps {
   open: boolean;
   onClose: () => void;
@@ -53,19 +55,19 @@ export default function Sheet({
         }}
       >
         <div className="sticky top-0 flex items-center justify-between rounded-t-2xl bg-white px-4 pb-2 pt-3">
-          <span className="mx-auto block h-1.5 w-10 rounded-full bg-gray-300" />
+          <span className="mx-auto block h-1.5 w-10 rounded-full bg-slate-300" />
         </div>
         <div className="px-4 pb-2">
           {title ? (
             <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+              <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
               <button
                 type="button"
                 onClick={onClose}
                 aria-label="Close"
-                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
               >
-                ✕
+                <IconX size={18} />
               </button>
             </div>
           ) : null}

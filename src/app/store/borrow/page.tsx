@@ -23,6 +23,39 @@ import { getWebApp, parseStartAppCode } from "@/lib/telegram/webapp-client";
 const PENDING_SCAN_KEY = "tele-qr:pending-scan";
 
 /**
+ * localStorage key remembering the member's last-used borrow destination on
+ * this device. Resolves flows.md's open question ("should the destination
+ * prompt remember the member's last choice as a default? Likely yes") --
+ * most people work on one robot for weeks at a stretch, so re-asking every
+ * session was pure tap overhead. Still fully overridable via Cart's "Change"
+ * link, since a stale/retired holder must never dead-end a borrow.
+ */
+const LAST_DEST_KEY = "tele-qr:last-dest";
+
+function readLastDestination(): DestinationOption | null {
+  try {
+    const raw = window.localStorage.getItem(LAST_DEST_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<DestinationOption>;
+    if (typeof parsed.id === "string" && typeof parsed.name === "string") {
+      return { id: parsed.id, name: parsed.name };
+    }
+  } catch {
+    // Corrupt or inaccessible storage -- fall back to asking, same as a
+    // first-ever visit.
+  }
+  return null;
+}
+
+function writeLastDestination(option: DestinationOption) {
+  try {
+    window.localStorage.setItem(LAST_DEST_KEY, JSON.stringify(option));
+  } catch {
+    // Storage disabled/full -- non-fatal, the member just gets re-asked next time.
+  }
+}
+
+/**
  * Matches WP15's actual `PendingScanPayload` (src/app/store/page.tsx):
  * `code` is `null` whenever the item was reached via search or the
  * group-pick sheet on the entry page rather than a direct product scan --
@@ -114,13 +147,27 @@ export default function BorrowPage() {
     }
   }, [initData]);
 
-  // Kick off an item add: first item of the session triggers the
-  // destination picker (asked once, then fixed); every later item skips
-  // straight to the quantity step.
+  // Kick off an item add: first item of the session either auto-fills the
+  // remembered last destination (0 taps) or triggers the destination picker
+  // when there isn't one yet; every later item skips straight to the
+  // quantity step.
   const beginIntake = useCallback(
     (product: CartProduct, entryMethod: EntryMethod, scanCode?: string) => {
       const pending: PendingIntake = { product, entryMethod, scanCode };
       if (state.destHolderId === null) {
+        const remembered = readLastDestination();
+        if (remembered) {
+          dispatch({
+            type: "SET_DEST",
+            destHolderId: remembered.id,
+            destHolderName: remembered.name,
+          });
+          // Prefetch in the background so tapping "Change" in Cart opens
+          // instantly instead of showing a loading state.
+          void loadDestinationOptions();
+          proceedToQuantity(pending);
+          return;
+        }
         setPendingIntake(pending);
         setDestPickerOpen(true);
         void loadDestinationOptions();
@@ -170,7 +217,15 @@ export default function BorrowPage() {
   }, []);
 
   const handleDestinationSelect = (option: DestinationOption) => {
-    dispatch({ type: "SET_DEST", destHolderId: option.id, destHolderName: option.name });
+    writeLastDestination(option);
+    // SET_DEST is a one-shot guard (never re-fires once destHolderId is
+    // set) -- reopening the picker via Cart's "Change" link needs
+    // CHANGE_DEST instead, which always applies.
+    dispatch(
+      state.destHolderId === null
+        ? { type: "SET_DEST", destHolderId: option.id, destHolderName: option.name }
+        : { type: "CHANGE_DEST", destHolderId: option.id, destHolderName: option.name },
+    );
     setDestPickerOpen(false);
     if (pendingIntake) proceedToQuantity(pendingIntake);
   };
@@ -178,6 +233,13 @@ export default function BorrowPage() {
   const handleDestinationClose = () => {
     setDestPickerOpen(false);
     setPendingIntake(null); // abort the item that triggered the picker
+  };
+
+  // "Change" link in Cart -- only ever shown once a destination exists, so
+  // there's no pendingIntake to worry about aborting.
+  const handleChangeDestination = () => {
+    setDestPickerOpen(true);
+    void loadDestinationOptions();
   };
 
   const handleQuantityConfirm = (qty: number) => {
@@ -325,6 +387,7 @@ export default function BorrowPage() {
         onSearch={() => setSearchOpen(true)}
         onDone={() => void submitCart()}
         onCancel={handleCancel}
+        onChangeDestination={state.destHolderId !== null ? handleChangeDestination : undefined}
         submitting={submitting}
       />
 

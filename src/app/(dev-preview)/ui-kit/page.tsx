@@ -24,7 +24,7 @@ export default function UiKitPreviewPage() {
       <h1 className="text-xl font-bold">UI kit preview</h1>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
           Button
         </h2>
         <div className="flex flex-wrap gap-3">
@@ -38,7 +38,7 @@ export default function UiKitPreviewPage() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
           Stepper
         </h2>
         <div className="flex items-center gap-4">
@@ -51,11 +51,11 @@ export default function UiKitPreviewPage() {
             label="Resistor 10kΩ 0402"
           />
         </div>
-        <p className="text-sm text-gray-500">Current value: {quantity}</p>
+        <p className="text-sm text-slate-500">Current value: {quantity}</p>
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
           Toast
         </h2>
         {showSuccessToast ? (
@@ -77,7 +77,7 @@ export default function UiKitPreviewPage() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
           Sheet
         </h2>
         <Button variant="secondary" onClick={() => setSheetOpen(true)}>

@@ -105,6 +105,14 @@ describe("cartReducer", () => {
     expect(state.destHolderName).toBe("Hero");
   });
 
+  it("CHANGE_DEST overrides an already-set destination (unlike SET_DEST)", () => {
+    let state = initialCartState();
+    state = cartReducer(state, { type: "SET_DEST", destHolderId: "hero-id", destHolderName: "Hero" });
+    state = cartReducer(state, { type: "CHANGE_DEST", destHolderId: "sentry-id", destHolderName: "Sentry" });
+    expect(state.destHolderId).toBe("sentry-id");
+    expect(state.destHolderName).toBe("Sentry");
+  });
+
   it("SET_LINE_QTY updates an existing line's quantity", () => {
     let state = initialCartState();
     state = cartReducer(state, { type: "ADD_ITEM", product: RESISTOR, qty: 10, entryMethod: "scan" });

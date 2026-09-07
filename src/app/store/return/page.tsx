@@ -58,6 +58,37 @@ export default function ReturnPage() {
   // `initData` prop) has something to read.
   const [initData, setInitData] = useState("");
 
+  // `initDataOverride` covers the single-source auto-skip path below, which
+  // calls this synchronously inside the mount effect -- before React has
+  // flushed `setInitData`, so the `initData` state closure would otherwise
+  // still read as "" and send an unauthenticated request.
+  const pickSource = (source: SourceHolder, sources: SourceHolder[], initDataOverride?: string) => {
+    setStage({ name: "loading-holdings", sources, source });
+    setItems([]);
+    setExtraLines([]);
+    setQuantities({});
+
+    fetch(`/api/store/holdings?holderId=${encodeURIComponent(source.id)}`, {
+      headers: { "X-Telegram-Init-Data": initDataOverride ?? initData },
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Failed to load holdings (${res.status})`);
+        return res.json() as Promise<{ items: HoldingItem[] }>;
+      })
+      .then((data) => {
+        setItems(data.items);
+        setStage({ name: "checklist", sources, source });
+      })
+      .catch((err) => {
+        setStage({
+          name: "holdings-error",
+          sources,
+          source,
+          message: err instanceof Error ? err.message : "Failed to load holdings",
+        });
+      });
+  };
+
   useEffect(() => {
     let cancelled = false;
 
@@ -90,6 +121,14 @@ export default function ReturnPage() {
         })
         .then((data) => {
           if (cancelled) return;
+          // Skip the "Returning from where?" screen entirely when there's
+          // only one possible source -- most members only ever hold stock
+          // personally or on a single robot, so asking is a tap with only
+          // one honest answer.
+          if (data.holders.length === 1) {
+            pickSource(data.holders[0], data.holders, webApp.initData);
+            return;
+          }
           setStage({ name: "picking-source", sources: data.holders });
         })
         .catch((err) => {
@@ -104,34 +143,11 @@ export default function ReturnPage() {
     return () => {
       cancelled = true;
     };
+    // Intentionally mount-only: `pickSource` is a plain function (not
+    // memoized) redefined every render, so listing it here would defeat the
+    // empty dependency array rather than add a real dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const pickSource = (source: SourceHolder, sources: SourceHolder[]) => {
-    setStage({ name: "loading-holdings", sources, source });
-    setItems([]);
-    setExtraLines([]);
-    setQuantities({});
-
-    fetch(`/api/store/holdings?holderId=${encodeURIComponent(source.id)}`, {
-      headers: { "X-Telegram-Init-Data": initData },
-    })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`Failed to load holdings (${res.status})`);
-        return res.json() as Promise<{ items: HoldingItem[] }>;
-      })
-      .then((data) => {
-        setItems(data.items);
-        setStage({ name: "checklist", sources, source });
-      })
-      .catch((err) => {
-        setStage({
-          name: "holdings-error",
-          sources,
-          source,
-          message: err instanceof Error ? err.message : "Failed to load holdings",
-        });
-      });
-  };
 
   const handleQtyChange = (productId: string, qty: number) => {
     setQuantities((prev) => ({ ...prev, [productId]: qty }));
@@ -217,10 +233,10 @@ export default function ReturnPage() {
 
   return (
     <div className="mx-auto max-w-md p-4 pb-24">
-      <h1 className="mb-4 text-xl font-semibold text-gray-900">Return</h1>
+      <h1 className="mb-4 text-xl font-semibold text-slate-900">Return</h1>
 
       {stage.name === "loading-sources" ? (
-        <p className="text-sm text-gray-500">Loading…</p>
+        <p className="text-sm text-slate-500">Loading…</p>
       ) : null}
 
       {stage.name === "sources-error" ? (
@@ -229,8 +245,8 @@ export default function ReturnPage() {
 
       {stage.name === "picking-source" ? (
         <div>
-          <p className="mb-2 text-sm text-gray-600">Returning from where?</p>
-          <ul className="divide-y divide-gray-100">
+          <p className="mb-2 text-sm text-slate-600">Returning from where?</p>
+          <ul className="divide-y divide-slate-100">
             {stage.sources.map((source) => (
               <li key={source.id}>
                 <button
@@ -238,8 +254,8 @@ export default function ReturnPage() {
                   onClick={() => pickSource(source, stage.sources)}
                   className="flex min-h-11 w-full items-center justify-between py-3 text-left"
                 >
-                  <span className="font-medium text-gray-900">{source.name}</span>
-                  <span className="text-xs uppercase text-gray-400">{source.kind}</span>
+                  <span className="font-medium text-slate-900">{source.name}</span>
+                  <span className="text-xs uppercase text-slate-400">{source.kind}</span>
                 </button>
               </li>
             ))}
@@ -248,7 +264,7 @@ export default function ReturnPage() {
       ) : null}
 
       {stage.name === "loading-holdings" ? (
-        <p className="text-sm text-gray-500">Loading {stage.source.name}&rsquo;s holdings…</p>
+        <p className="text-sm text-slate-500">Loading {stage.source.name}&rsquo;s holdings…</p>
       ) : null}
 
       {stage.name === "holdings-error" ? (
@@ -264,7 +280,7 @@ export default function ReturnPage() {
 
       {stage.name === "checklist" ? (
         <div>
-          <p className="mb-2 text-sm text-gray-600">Returning from {stage.source.name}</p>
+          <p className="mb-2 text-sm text-slate-600">Returning from {stage.source.name}</p>
           <ReturnChecklist
             items={items}
             extraLines={extraLines}

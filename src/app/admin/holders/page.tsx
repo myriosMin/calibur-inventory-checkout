@@ -154,18 +154,18 @@ export default function AdminHoldersPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-lg font-semibold text-gray-900">Holders</h1>
-        <p className="mt-1 text-sm text-gray-600">
+        <h1 className="text-lg font-semibold text-slate-900">Holders</h1>
+        <p className="mt-1 text-sm text-slate-600">
           Store, robot, member, and pseudo-holders that stock can be moved
           between. Use this form mainly to add new <strong>robots</strong> as
           the club acquires them.{" "}
-          <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">store</code>,{" "}
-          <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">consumed</code>,
+          <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">store</code>,{" "}
+          <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">consumed</code>,
           and{" "}
-          <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">adjustment</code>{" "}
+          <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">adjustment</code>{" "}
           are system-seeded singletons that already exist and shouldn&apos;t be
           duplicated, so they aren&apos;t offered below.{" "}
-          <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">member</code>{" "}
+          <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">member</code>{" "}
           holders are normally created automatically when a member is added;
           only use it here to recreate one that was removed by hand.
         </p>
@@ -181,16 +181,16 @@ export default function AdminHoldersPage() {
 
       <form
         onSubmit={handleSubmit}
-        className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4"
+        className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4"
       >
-        <h2 className="text-sm font-semibold text-gray-900">New holder</h2>
+        <h2 className="text-sm font-semibold text-slate-900">New holder</h2>
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-sm text-gray-700">
+          <label className="flex flex-col gap-1 text-sm text-slate-700">
             Kind
             <select
               value={kind}
               onChange={(e) => handleKindChange(e.target.value as CreatableKind)}
-              className="min-h-11 rounded-lg border border-gray-300 px-3 text-base"
+              className="min-h-11 rounded-lg border border-slate-300 px-3 text-base"
             >
               {CREATABLE_KINDS.map((k) => (
                 <option key={k} value={k}>
@@ -199,7 +199,7 @@ export default function AdminHoldersPage() {
               ))}
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-sm text-gray-700">
+          <label className="flex flex-col gap-1 text-sm text-slate-700">
             Name
             <input
               type="text"
@@ -207,17 +207,17 @@ export default function AdminHoldersPage() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={kind === "robot" ? "e.g. Sentry 2" : "Holder name"}
-              className="min-h-11 rounded-lg border border-gray-300 px-3 text-base"
+              className="min-h-11 rounded-lg border border-slate-300 px-3 text-base"
             />
           </label>
           {kind === "member" ? (
-            <label className="flex flex-col gap-1 text-sm text-gray-700 sm:col-span-2">
+            <label className="flex flex-col gap-1 text-sm text-slate-700 sm:col-span-2">
               Linked member
               <select
                 value={memberId}
                 onChange={(e) => setMemberId(e.target.value)}
                 required
-                className="min-h-11 rounded-lg border border-gray-300 px-3 text-base"
+                className="min-h-11 rounded-lg border border-slate-300 px-3 text-base"
               >
                 <option value="">Select a member…</option>
                 {members.map((m) => (
@@ -237,21 +237,21 @@ export default function AdminHoldersPage() {
         </div>
       </form>
 
-      <div className="rounded-xl border border-gray-200 bg-white">
-        <h2 className="border-b border-gray-200 px-4 py-3 text-sm font-semibold text-gray-900">
+      <div className="rounded-xl border border-slate-200 bg-white">
+        <h2 className="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-900">
           All holders
         </h2>
         {loading ? (
-          <p className="p-4 text-sm text-gray-500">Loading…</p>
+          <p className="p-4 text-sm text-slate-500">Loading…</p>
         ) : loadError ? (
           <p className="p-4 text-sm text-red-600">{loadError}</p>
         ) : holders.length === 0 ? (
-          <p className="p-4 text-sm text-gray-500">No holders yet.</p>
+          <p className="p-4 text-sm text-slate-500">No holders yet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-gray-200 text-gray-500">
+                <tr className="border-b border-slate-200 text-slate-500">
                   <th className="px-4 py-2 font-medium">Name</th>
                   <th className="px-4 py-2 font-medium">Kind</th>
                   <th className="px-4 py-2 font-medium">Linked member</th>
@@ -260,10 +260,10 @@ export default function AdminHoldersPage() {
               </thead>
               <tbody>
                 {holders.map((holder) => (
-                  <tr key={holder.id} className="border-b border-gray-100 last:border-0">
-                    <td className="px-4 py-2 text-gray-900">{holder.name}</td>
-                    <td className="px-4 py-2 text-gray-600">{holder.kind}</td>
-                    <td className="px-4 py-2 text-gray-600">
+                  <tr key={holder.id} className="border-b border-slate-100 last:border-0">
+                    <td className="px-4 py-2 text-slate-900">{holder.name}</td>
+                    <td className="px-4 py-2 text-slate-600">{holder.kind}</td>
+                    <td className="px-4 py-2 text-slate-600">
                       {holderMemberLabel(holder, members) ?? "—"}
                     </td>
                     <td className="px-4 py-2">
@@ -272,7 +272,7 @@ export default function AdminHoldersPage() {
                           Active
                         </span>
                       ) : (
-                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                           Inactive
                         </span>
                       )}

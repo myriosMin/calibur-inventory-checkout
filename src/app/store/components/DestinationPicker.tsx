@@ -40,18 +40,18 @@ export default function DestinationPicker({
 }: DestinationPickerProps) {
   return (
     <Sheet open={open} onClose={onClose} title="Where is this going?">
-      {loading ? <p className="py-2 text-sm text-gray-500">Loading destinations…</p> : null}
+      {loading ? <p className="py-2 text-sm text-slate-500">Loading destinations…</p> : null}
       {error ? <p className="py-2 text-sm text-red-600">{error}</p> : null}
       {!loading && !error && options.length === 0 ? (
-        <p className="py-2 text-sm text-gray-500">No destinations available.</p>
+        <p className="py-2 text-sm text-slate-500">No destinations available.</p>
       ) : null}
-      <ul className="divide-y divide-gray-100">
+      <ul className="divide-y divide-slate-100">
         {options.map((option) => (
           <li key={option.id}>
             <button
               type="button"
               onClick={() => onSelect(option)}
-              className="flex min-h-11 w-full items-center justify-between py-3 text-left font-medium text-gray-900"
+              className="flex min-h-11 w-full items-center justify-between py-3 text-left font-medium text-slate-900"
             >
               {option.name}
             </button>

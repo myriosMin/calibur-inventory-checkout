@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { href: "/admin", label: "Dashboard" },
   { href: "/admin/products", label: "Products" },
   { href: "/admin/holders", label: "Holders" },
+  { href: "/admin/members", label: "Members" },
   { href: "/admin/scan-codes", label: "Scan codes" },
   { href: "/admin/bind-queue", label: "Bind queue" },
 ];
@@ -29,8 +30,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   };
 
   return (
-    <div className="min-h-dvh bg-gray-50">
-      <header className="border-b border-gray-200 bg-white">
+    <div className="min-h-dvh bg-slate-50">
+      <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <nav className="flex flex-wrap gap-4">
             {NAV_LINKS.map((link) => (
@@ -39,8 +40,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 href={link.href}
                 className={`text-sm font-medium ${
                   pathname === link.href
-                    ? "text-blue-700"
-                    : "text-gray-600 hover:text-gray-900"
+                    ? "text-emerald-700"
+                    : "text-slate-600 hover:text-slate-900"
                 }`}
               >
                 {link.label}
@@ -50,7 +51,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <button
             type="button"
             onClick={handleSignOut}
-            className="text-sm font-medium text-gray-500 hover:text-gray-900"
+            className="text-sm font-medium text-slate-500 hover:text-slate-900"
           >
             Sign out
           </button>

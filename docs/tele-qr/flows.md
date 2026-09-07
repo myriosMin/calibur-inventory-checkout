@@ -62,10 +62,12 @@ OPEN_CART  (first scan of a session)
        tier = loose → [Took some] [Took the last of it]
 
 CART  (live, in-app)
-  🛒 Borrowing → Hero
+  Borrowing → Hero  (Change)
   • Resistor 10kΩ 0402      × 10   [-] [+]
   • XT30 right angle M      ×  2   [-] [+]
-  [📷 Scan more]  [🔍 Search]  [✅ Done]  [❌ Cancel]
+  [Scan more]  [Search]
+  [           Done            ]
+  (Cancel, de-emphasized, top-right)
 
   scan more → scanner reopens, item appended, cart updates in place
   Done      → one API call, one transaction, movements written
@@ -75,6 +77,10 @@ Design rules:
 
 - **Destination is asked once per session, not per item.** This is most of the
   tap savings.
+- **The destination prompt is skipped entirely when the member has a
+  remembered last choice** (stored client-side, per device) — it auto-fills
+  and the sheet never opens. A "Change" link next to the destination name is
+  the escape hatch if it's wrong. This resolves the open question below.
 - **Scanning the same product twice increments its line** rather than adding a
   duplicate. It maps onto the physical act of grabbing another one.
 - **Tier drives the quantity prompt.** Assets are almost always 1, so skipping
@@ -101,13 +107,16 @@ is the load-bearing assumption of the whole design.
 No scanning. After identification the app already knows what is held.
 
 ```
-RETURN_SOURCE  "Returning from where?"
+RETURN_SOURCE  "Returning from where?" -- skipped automatically when the
+               member only has one possible source (the common case: just
+               Personal/bench, or one robot); shown only when there's a
+               real choice to make
   → robots this member has borrowed to, + Personal/bench
 
 RETURN_LIST    checklist from the `holdings` view
   • GM6020            held 2   returning [0] [-] [+]
   • Center board 2    held 1   returning [0] [-] [+]
-  [Return all]  [Something else →search]  [✅ Done]
+  [Return all]  [Add item]  [Done]
 ```
 
 Movements are `from = holder`, `to = store`, `reason = 'return'`.
@@ -199,8 +208,11 @@ one does.
 
 ## Open questions
 
-- Should the destination prompt remember the member's last choice as a default?
-  Likely yes — most people work on one robot for weeks at a stretch.
+- ~~Should the destination prompt remember the member's last choice as a
+  default?~~ **Resolved, implemented**: yes, via `localStorage` on the
+  member's device (`src/app/store/borrow/page.tsx`), overridable with a
+  "Change" link in Cart. Not synced across devices — a member who borrows from
+  a second phone gets asked once more there.
 - Is "Borrow or Return?" needed at all on a scan, given `products.returnable`
   and current holdings usually imply the answer? Could drop to one tap in the
   common case; needs a look at real usage before optimising.

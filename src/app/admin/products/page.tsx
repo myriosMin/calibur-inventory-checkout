@@ -190,15 +190,15 @@ export default function AdminProductsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-xl font-semibold text-gray-900">Products</h1>
-        <p className="text-sm text-gray-500">
+        <h1 className="text-xl font-semibold text-slate-900">Products</h1>
+        <p className="text-sm text-slate-500">
           Create and manage the catalog. Changes take effect immediately for
           the Mini App.
         </p>
       </div>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-4">
-        <h2 className="mb-4 text-sm font-semibold text-gray-900">
+      <section className="rounded-xl border border-slate-200 bg-white p-4">
+        <h2 className="mb-4 text-sm font-semibold text-slate-900">
           New product
         </h2>
 
@@ -219,23 +219,23 @@ export default function AdminProductsPage() {
 
         <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-gray-700">Name *</span>
+            <span className="font-medium text-slate-700">Name *</span>
             <input
               required
               value={form.name}
               onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-gray-700">Tier *</span>
+            <span className="font-medium text-slate-700">Tier *</span>
             <select
               value={form.tier}
               onChange={(e) =>
                 setForm((p) => ({ ...p, tier: e.target.value as Tier }))
               }
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             >
               {TIERS.map((tier) => (
                 <option key={tier} value={tier}>
@@ -246,24 +246,24 @@ export default function AdminProductsPage() {
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-gray-700">Category</span>
+            <span className="font-medium text-slate-700">Category</span>
             <input
               value={form.category}
               onChange={(e) =>
                 setForm((p) => ({ ...p, category: e.target.value }))
               }
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
 
           <div className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-gray-700">Location</span>
+            <span className="font-medium text-slate-700">Location</span>
             <select
               value={form.location_id}
               onChange={(e) =>
                 setForm((p) => ({ ...p, location_id: e.target.value }))
               }
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             >
               <option value="">— none —</option>
               {locations.map((loc) => (
@@ -277,7 +277,7 @@ export default function AdminProductsPage() {
                 value={newLocationName}
                 onChange={(e) => setNewLocationName(e.target.value)}
                 placeholder="New location name"
-                className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-xs"
+                className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs"
               />
               <Button
                 type="button"
@@ -295,39 +295,39 @@ export default function AdminProductsPage() {
           </div>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-gray-700">Unit</span>
+            <span className="font-medium text-slate-700">Unit</span>
             <input
               value={form.unit}
               onChange={(e) => setForm((p) => ({ ...p, unit: e.target.value }))}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-gray-700">Part number</span>
+            <span className="font-medium text-slate-700">Part number</span>
             <input
               value={form.part_number}
               onChange={(e) =>
                 setForm((p) => ({ ...p, part_number: e.target.value }))
               }
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-gray-700">Min stock</span>
+            <span className="font-medium text-slate-700">Min stock</span>
             <input
               type="number"
               value={form.min_stock}
               onChange={(e) =>
                 setForm((p) => ({ ...p, min_stock: e.target.value }))
               }
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
 
           <div className="flex items-center gap-4 pt-6">
-            <label className="flex items-center gap-2 text-sm text-gray-700">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"
                 checked={form.returnable}
@@ -337,7 +337,7 @@ export default function AdminProductsPage() {
               />
               Returnable
             </label>
-            <label className="flex items-center gap-2 text-sm text-gray-700">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"
                 checked={form.active}
@@ -350,7 +350,7 @@ export default function AdminProductsPage() {
           </div>
 
           <label className="flex flex-col gap-1 text-sm sm:col-span-2">
-            <span className="font-medium text-gray-700">
+            <span className="font-medium text-slate-700">
               Spec (JSON, optional)
             </span>
             <textarea
@@ -358,17 +358,17 @@ export default function AdminProductsPage() {
               onChange={(e) => setForm((p) => ({ ...p, spec: e.target.value }))}
               rows={3}
               placeholder='{"value": "10k", "package": "0805"}'
-              className="rounded-lg border border-gray-300 px-3 py-2 font-mono text-xs"
+              className="rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs"
             />
           </label>
 
           <label className="flex flex-col gap-1 text-sm sm:col-span-2">
-            <span className="font-medium text-gray-700">Notes</span>
+            <span className="font-medium text-slate-700">Notes</span>
             <textarea
               value={form.notes}
               onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
               rows={2}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
 
@@ -380,25 +380,25 @@ export default function AdminProductsPage() {
         </form>
       </section>
 
-      <section className="rounded-xl border border-gray-200 bg-white">
-        <div className="border-b border-gray-200 px-4 py-3">
-          <h2 className="text-sm font-semibold text-gray-900">
+      <section className="rounded-xl border border-slate-200 bg-white">
+        <div className="border-b border-slate-200 px-4 py-3">
+          <h2 className="text-sm font-semibold text-slate-900">
             All products ({products.length})
           </h2>
         </div>
 
         {loading ? (
-          <p className="p-4 text-sm text-gray-500">Loading…</p>
+          <p className="p-4 text-sm text-slate-500">Loading…</p>
         ) : loadError ? (
           <div className="p-4">
             <Toast variant="error" message={loadError} />
           </div>
         ) : products.length === 0 ? (
-          <p className="p-4 text-sm text-gray-500">No products yet.</p>
+          <p className="p-4 text-sm text-slate-500">No products yet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-2 font-medium">Name</th>
                   <th className="px-4 py-2 font-medium">Tier</th>
@@ -408,17 +408,17 @@ export default function AdminProductsPage() {
                   <th className="px-4 py-2" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-slate-100">
                 {products.map((product) => (
                   <tr key={product.id}>
-                    <td className="px-4 py-2 font-medium text-gray-900">
+                    <td className="px-4 py-2 font-medium text-slate-900">
                       {product.name}
                     </td>
-                    <td className="px-4 py-2 text-gray-600">{product.tier}</td>
-                    <td className="px-4 py-2 text-gray-600">
+                    <td className="px-4 py-2 text-slate-600">{product.tier}</td>
+                    <td className="px-4 py-2 text-slate-600">
                       {product.category ?? "—"}
                     </td>
-                    <td className="px-4 py-2 text-gray-600">
+                    <td className="px-4 py-2 text-slate-600">
                       {locationName(product.location_id)}
                     </td>
                     <td className="px-4 py-2">
@@ -426,7 +426,7 @@ export default function AdminProductsPage() {
                         className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                           product.active
                             ? "bg-green-100 text-green-800"
-                            : "bg-gray-100 text-gray-500"
+                            : "bg-slate-100 text-slate-500"
                         }`}
                       >
                         {product.active ? "active" : "inactive"}
@@ -435,7 +435,7 @@ export default function AdminProductsPage() {
                     <td className="px-4 py-2 text-right">
                       <Link
                         href={`/admin/products/${product.id}`}
-                        className="text-sm font-medium text-blue-700 hover:text-blue-900"
+                        className="text-sm font-medium text-emerald-700 hover:text-emerald-900"
                       >
                         Edit
                       </Link>

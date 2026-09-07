@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import SheetComponent from "@/components/ui/Sheet";
+import { IconSearch } from "@/components/ui/icons";
 
 export interface SearchProduct {
   id: string;
@@ -88,20 +89,23 @@ export default function SearchSheet({ open, onClose, initData, onSelect }: Searc
 
   return (
     <SheetComponent open={open} onClose={onClose} title="Search">
-      <input
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search by name, value, package…"
-        autoFocus
-        className="mb-3 min-h-11 w-full rounded-lg border border-gray-300 px-3 text-base"
-      />
-      {loading ? <p className="py-2 text-sm text-gray-500">Searching…</p> : null}
+      <div className="relative mb-3">
+        <IconSearch size={18} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search by name, value, package…"
+          autoFocus
+          className="min-h-11 w-full rounded-lg border border-slate-300 py-2 pl-10 pr-3 text-base"
+        />
+      </div>
+      {loading ? <p className="py-2 text-sm text-slate-500">Searching…</p> : null}
       {error ? <p className="py-2 text-sm text-red-600">{error}</p> : null}
       {!loading && !error && trimmedQuery !== "" && visibleResults.length === 0 ? (
-        <p className="py-2 text-sm text-gray-500">No matches.</p>
+        <p className="py-2 text-sm text-slate-500">No matches.</p>
       ) : null}
-      <ul className="divide-y divide-gray-100">
+      <ul className="divide-y divide-slate-100">
         {visibleResults.map((product) => (
           <li key={product.id}>
             <button
@@ -110,12 +114,12 @@ export default function SearchSheet({ open, onClose, initData, onSelect }: Searc
               className="flex min-h-11 w-full items-center justify-between py-2 text-left"
             >
               <span>
-                <span className="block font-medium text-gray-900">{product.name}</span>
+                <span className="block font-medium text-slate-900">{product.name}</span>
                 {product.category ? (
-                  <span className="block text-xs text-gray-500">{product.category}</span>
+                  <span className="block text-xs text-slate-500">{product.category}</span>
                 ) : null}
               </span>
-              <span className="text-xs uppercase text-gray-400">{product.tier}</span>
+              <span className="text-xs uppercase text-slate-400">{product.tier}</span>
             </button>
           </li>
         ))}

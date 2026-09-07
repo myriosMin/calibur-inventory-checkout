@@ -198,14 +198,14 @@ export default function AdminProductEditPage({
   }
 
   if (loading) {
-    return <p className="text-sm text-gray-500">Loading…</p>;
+    return <p className="text-sm text-slate-500">Loading…</p>;
   }
 
   if (loadError || !product || !form) {
     return (
       <div className="space-y-4">
         <Toast variant="error" message={loadError ?? "Product not found."} />
-        <Link href="/admin/products" className="text-sm font-medium text-blue-700">
+        <Link href="/admin/products" className="text-sm font-medium text-emerald-700">
           &larr; Back to products
         </Link>
       </div>
@@ -215,15 +215,15 @@ export default function AdminProductEditPage({
   return (
     <div className="space-y-4">
       <div>
-        <Link href="/admin/products" className="text-sm font-medium text-blue-700">
+        <Link href="/admin/products" className="text-sm font-medium text-emerald-700">
           &larr; Back to products
         </Link>
-        <h1 className="mt-1 text-xl font-semibold text-gray-900">
+        <h1 className="mt-1 text-xl font-semibold text-slate-900">
           Edit product: {product.name}
         </h1>
       </div>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-4">
+      <section className="rounded-xl border border-slate-200 bg-white p-4">
         {saveError ? (
           <div className="mb-4">
             <Toast variant="error" message={saveError} onDismiss={() => setSaveError(null)} />
@@ -241,19 +241,19 @@ export default function AdminProductEditPage({
 
         <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-gray-700">Name *</span>
+            <span className="font-medium text-slate-700">Name *</span>
             <input
               required
               value={form.name}
               onChange={(e) =>
                 setForm((p) => (p ? { ...p, name: e.target.value } : p))
               }
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-gray-700">Tier *</span>
+            <span className="font-medium text-slate-700">Tier *</span>
             <select
               value={form.tier}
               onChange={(e) =>
@@ -261,7 +261,7 @@ export default function AdminProductEditPage({
                   p ? { ...p, tier: e.target.value as Tier } : p,
                 )
               }
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             >
               {TIERS.map((tier) => (
                 <option key={tier} value={tier}>
@@ -272,18 +272,18 @@ export default function AdminProductEditPage({
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-gray-700">Category</span>
+            <span className="font-medium text-slate-700">Category</span>
             <input
               value={form.category}
               onChange={(e) =>
                 setForm((p) => (p ? { ...p, category: e.target.value } : p))
               }
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
 
           <div className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-gray-700">Location</span>
+            <span className="font-medium text-slate-700">Location</span>
             <select
               value={form.location_id}
               onChange={(e) =>
@@ -291,7 +291,7 @@ export default function AdminProductEditPage({
                   p ? { ...p, location_id: e.target.value } : p,
                 )
               }
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             >
               <option value="">— none —</option>
               {locations.map((loc) => (
@@ -305,7 +305,7 @@ export default function AdminProductEditPage({
                 value={newLocationName}
                 onChange={(e) => setNewLocationName(e.target.value)}
                 placeholder="New location name"
-                className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-xs"
+                className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs"
               />
               <Button
                 type="button"
@@ -323,41 +323,41 @@ export default function AdminProductEditPage({
           </div>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-gray-700">Unit</span>
+            <span className="font-medium text-slate-700">Unit</span>
             <input
               value={form.unit}
               onChange={(e) =>
                 setForm((p) => (p ? { ...p, unit: e.target.value } : p))
               }
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-gray-700">Part number</span>
+            <span className="font-medium text-slate-700">Part number</span>
             <input
               value={form.part_number}
               onChange={(e) =>
                 setForm((p) => (p ? { ...p, part_number: e.target.value } : p))
               }
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-gray-700">Min stock</span>
+            <span className="font-medium text-slate-700">Min stock</span>
             <input
               type="number"
               value={form.min_stock}
               onChange={(e) =>
                 setForm((p) => (p ? { ...p, min_stock: e.target.value } : p))
               }
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
 
           <div className="flex items-center gap-4 pt-6">
-            <label className="flex items-center gap-2 text-sm text-gray-700">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"
                 checked={form.returnable}
@@ -369,7 +369,7 @@ export default function AdminProductEditPage({
               />
               Returnable
             </label>
-            <label className="flex items-center gap-2 text-sm text-gray-700">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"
                 checked={form.active}
@@ -382,7 +382,7 @@ export default function AdminProductEditPage({
           </div>
 
           <label className="flex flex-col gap-1 text-sm sm:col-span-2">
-            <span className="font-medium text-gray-700">
+            <span className="font-medium text-slate-700">
               Spec (JSON, optional)
             </span>
             <textarea
@@ -392,19 +392,19 @@ export default function AdminProductEditPage({
               }
               rows={3}
               placeholder='{"value": "10k", "package": "0805"}'
-              className="rounded-lg border border-gray-300 px-3 py-2 font-mono text-xs"
+              className="rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs"
             />
           </label>
 
           <label className="flex flex-col gap-1 text-sm sm:col-span-2">
-            <span className="font-medium text-gray-700">Notes</span>
+            <span className="font-medium text-slate-700">Notes</span>
             <textarea
               value={form.notes}
               onChange={(e) =>
                 setForm((p) => (p ? { ...p, notes: e.target.value } : p))
               }
               rows={2}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
 
