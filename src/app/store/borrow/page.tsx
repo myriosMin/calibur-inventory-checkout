@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useReducer, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import Toast from "@/components/ui/Toast";
@@ -106,6 +106,19 @@ export default function BorrowPage() {
   const [toast, setToast] = useState<ToastState | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Continuous-scan handoff (see handleScanMore below): the native camera
+  // popup is closed the instant a code is scanned so the follow-up sheets
+  // (destination / quantity / group-pick) render on top of it instead of
+  // hiding behind it. `resumeScanRef` remembers that the popup was closed
+  // "for" the scan currently being processed; every point where that chain
+  // can end -- successfully added to cart, aborted, or resolve failed --
+  // bumps `scanResumeTick`, and the effect below reopens the camera iff the
+  // ref is still armed. A ref (not state) so it can be read/cleared inside
+  // the showScanQrPopup callback without a stale closure.
+  const resumeScanRef = useRef(false);
+  const [scanResumeTick, setScanResumeTick] = useState(0);
+  const requestScanResume = useCallback(() => setScanResumeTick((tick) => tick + 1), []);
+
   // getWebApp() throws when window.Telegram.WebApp is absent and dev mocks
   // are disabled -- it must never run during SSR (client components still
   // render once on the server for the initial HTML), so it's read lazily
@@ -124,10 +137,11 @@ export default function BorrowPage() {
         entryMethod: pending.entryMethod,
       });
       setPendingIntake(null);
+      requestScanResume();
     } else {
       setPendingIntake(pending);
     }
-  }, []);
+  }, [requestScanResume]);
 
   const loadDestinationOptions = useCallback(async () => {
     setDestLoading(true);
@@ -233,6 +247,7 @@ export default function BorrowPage() {
   const handleDestinationClose = () => {
     setDestPickerOpen(false);
     setPendingIntake(null); // abort the item that triggered the picker
+    requestScanResume();
   };
 
   // "Change" link in Cart -- only ever shown once a destination exists, so
@@ -252,10 +267,12 @@ export default function BorrowPage() {
       entryMethod: pendingIntake.entryMethod,
     });
     setPendingIntake(null);
+    requestScanResume();
   };
 
   const handleQuantityClose = () => {
     setPendingIntake(null); // abort without adding
+    requestScanResume();
   };
 
   const resolveAndAdd = useCallback(
@@ -268,10 +285,12 @@ export default function BorrowPage() {
         });
         if (res.status === 404) {
           setToast({ variant: "error", message: "This label is retired or unrecognised — try search." });
+          requestScanResume();
           return;
         }
         if (!res.ok) {
           setToast({ variant: "error", message: "Couldn't look up that code — try again." });
+          requestScanResume();
           return;
         }
         const data = (await res.json()) as ResolveResponse;
@@ -287,18 +306,41 @@ export default function BorrowPage() {
         }
       } catch {
         setToast({ variant: "error", message: "Network error — try again." });
+        requestScanResume();
       }
     },
-    [initData, beginIntake],
+    [initData, beginIntake, requestScanResume],
   );
 
-  const handleScanMore = () => {
+  // Continuous scan, made seamless: the native camera popup is closed the
+  // moment a code comes back (`return true`) instead of being kept open
+  // underneath whatever follow-up sheet the scan triggers (destination /
+  // quantity / group-pick), which previously forced the member to back out
+  // of the camera to reach questions rendered behind it. `resumeScanRef` is
+  // armed here and consumed by the effect below once that chain ends, which
+  // reopens the popup automatically -- so scanning feels continuous even
+  // though the camera technically closes for each item.
+  const handleScanMore = useCallback(() => {
     getWebApp().showScanQrPopup({ text: "Scan the next item" }, (raw: string) => {
       const code = parseStartAppCode(raw);
-      if (code) void resolveAndAdd(code);
-      return false; // keep the scanner open -- see docs/tele-qr/flows.md §2
+      if (!code) return false; // garbage/empty scan -- keep the popup open
+      resumeScanRef.current = true;
+      void resolveAndAdd(code);
+      return true; // close now -- follow-up questions take over, camera reopens after
     });
-  };
+  }, [resolveAndAdd]);
+
+  // Fires whenever a scan-triggered intake chain ends (item added, aborted,
+  // or resolve failed) via requestScanResume(); reopens the camera only if
+  // that chain was actually started from the scanner (resumeScanRef), never
+  // for items added via search/group-pick alone.
+  useEffect(() => {
+    if (scanResumeTick === 0) return; // skip the initial mount
+    if (!resumeScanRef.current) return;
+    resumeScanRef.current = false;
+    handleScanMore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanResumeTick]);
 
   const handleGroupSelect = (product: GroupPickerProduct) => {
     setGroupPicker({ open: false, products: [] });
@@ -412,7 +454,10 @@ export default function BorrowPage() {
         locationName={groupPicker.locationName}
         products={groupPicker.products}
         onSelect={handleGroupSelect}
-        onClose={() => setGroupPicker({ open: false, products: [] })}
+        onClose={() => {
+          setGroupPicker({ open: false, products: [] });
+          requestScanResume();
+        }}
       />
 
       <SearchSheet

@@ -40,6 +40,29 @@ visual design. Applied across `/store` and (palette only) `/admin`:
 
 ---
 
+## Continuous-scan seam fix (not yet on-device verified)
+
+The camera "worked" but its follow-up sheets (destination picker / quantity
+prompt / group-pick) rendered *behind* the still-open native
+`showScanQrPopup` overlay, because `handleScanMore`
+(`src/app/store/borrow/page.tsx`) always returned `false` from the scan
+callback to keep the popup open for the next item — the intended behavior
+per `flows.md` §2, but it meant every per-item follow-up question was
+visually trapped under the camera until the member manually closed it.
+
+Fixed by flipping the sequencing: the popup now closes the instant a code is
+scanned (`return true`), letting the follow-up sheet take over the screen,
+and a `resumeScanRef`/`scanResumeTick` handshake reopens the popup
+automatically once that item's chain fully resolves — item added to cart,
+picker/prompt aborted, or the resolve call itself failed (404/network). The
+ref exists specifically so a search- or group-pick-originated item (which
+never armed it) doesn't spuriously reopen the camera. `npm run build`,
+`npm run lint`, and `npm test -- tests/unit` all clean; **not yet exercised
+on-device** — this is exactly the kind of interaction WP24 item #9 (gate:
+continuous scan on real iOS/Android) needs to confirm before relying on it.
+
+---
+
 ## Done: Phases 1–3 (all 24 work packages)
 
 **Schema (WP1):** 14 migrations applied to the live Supabase project —
