@@ -7,6 +7,9 @@ import Button from "@/components/ui/Button";
 import Toast from "@/components/ui/Toast";
 import { getBrowserClient } from "@/lib/supabase/browser";
 import type { Database } from "@/lib/types/database";
+import { normalizeTelegramHandle } from "@/lib/utils/normalize";
+
+import MemberImport from "./MemberImport";
 
 type Member = Database["public"]["Tables"]["members"]["Row"];
 type Role = "member" | "admin";
@@ -100,7 +103,11 @@ export default function AdminMembersPage() {
         full_name: fullName,
         display_name: form.display_name.trim() || null,
         nus_email: form.nus_email.trim() || null,
-        telegram_username: form.telegram_username.trim() || null,
+        // Normalised the same way the bulk importer and the bind-queue
+        // lookup do, so a handle typed here as "@Alex" matches the
+        // "alex" the bot reports on /start.
+        telegram_username:
+          normalizeTelegramHandle(form.telegram_username) || null,
         role: form.role,
         joined_at: form.joined_at || null,
       })
@@ -156,6 +163,8 @@ export default function AdminMembersPage() {
           onDismiss={() => setToast(null)}
         />
       ) : null}
+
+      <MemberImport onImported={loadMembers} />
 
       <form
         onSubmit={handleSubmit}

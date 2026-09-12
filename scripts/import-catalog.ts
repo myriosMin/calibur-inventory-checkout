@@ -20,88 +20,19 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { csvEscape, parseCsv, toCsvLine } from "../src/lib/csv/parse";
+
 // ---------------------------------------------------------------------------
-// CSV parsing (hand-rolled: the source file has quoted fields containing
-// commas, e.g. row 173's Remarks column, so a naive split(',') is wrong).
+// CSV parsing lives in src/lib/csv/parse.ts (hand-rolled: the source file has
+// quoted fields containing commas, e.g. row 173's Remarks column, so a naive
+// split(',') is wrong). It was moved out of this file so the admin roster
+// importer -- a browser client component, which cannot import the node:fs /
+// node:path this module needs -- can share the same implementation. Re-exported
+// here so existing importers of this module (tests/unit/import-catalog.test.ts)
+// keep working unchanged.
 // ---------------------------------------------------------------------------
 
-/** Parses raw CSV text into an array of rows, each an array of raw (untrimmed) field strings. */
-export function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let inQuotes = false;
-  let sawAnyContentOnLine = false;
-  let i = 0;
-  const n = text.length;
-
-  while (i < n) {
-    const c = text[i];
-    if (inQuotes) {
-      if (c === '"') {
-        if (text[i + 1] === '"') {
-          field += '"';
-          i += 2;
-          continue;
-        }
-        inQuotes = false;
-        i++;
-        continue;
-      }
-      field += c;
-      i++;
-      continue;
-    }
-
-    if (c === '"') {
-      inQuotes = true;
-      sawAnyContentOnLine = true;
-      i++;
-      continue;
-    }
-    if (c === ",") {
-      row.push(field);
-      field = "";
-      sawAnyContentOnLine = true;
-      i++;
-      continue;
-    }
-    if (c === "\r") {
-      i++;
-      continue;
-    }
-    if (c === "\n") {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = "";
-      sawAnyContentOnLine = false;
-      i++;
-      continue;
-    }
-    field += c;
-    sawAnyContentOnLine = true;
-    i++;
-  }
-  // Trailing field/row with no final newline.
-  if (field.length > 0 || row.length > 0 || sawAnyContentOnLine) {
-    row.push(field);
-    rows.push(row);
-  }
-  return rows;
-}
-
-/** Escapes a single field for CSV output. */
-export function csvEscape(value: string): string {
-  if (/[",\n\r]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
-}
-
-export function toCsvLine(fields: string[]): string {
-  return fields.map(csvEscape).join(",");
-}
+export { csvEscape, parseCsv, toCsvLine };
 
 // ---------------------------------------------------------------------------
 // Step 1: conservative Ω repair.
