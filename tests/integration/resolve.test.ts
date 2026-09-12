@@ -2,7 +2,7 @@ import "../../scripts/_env";
 
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { getServiceRoleClient } from "@/lib/supabase/server";
 import { POST } from "@/app/api/store/resolve/route";
@@ -13,6 +13,14 @@ import { POST } from "@/app/api/store/resolve/route";
 // seeded by scripts/seed-fixtures.ts, and hits the route handler directly by
 // constructing `Request` objects -- no HTTP server needed since Next.js route
 // handlers are plain (Request) => Response functions.
+//
+// Cleanup strategy: the unknown-code test makes the route log a `scan_misses`
+// row (migration 0023). Those rows are real observability data on the /admin
+// dashboard's "unknown or retired codes scanned" tile, so every suite run
+// was leaving a fake `DEFINITELY-NOT-A-REAL-CODE-ZZZ9999` sighting behind to
+// be counted as a broken label. Same watermark contract the other integration
+// files use for stock_movements: capture max(id) in beforeAll, delete
+// everything above it in afterAll, assert nothing remains.
 // ---------------------------------------------------------------------------
 
 const TEST_TELEGRAM_USER_ID = 900000000001;
@@ -49,11 +57,27 @@ describe("POST /api/store/resolve (integration, live DB)", () => {
   };
   let groupCode: string;
   let groupLocationName: string;
+  let baselineMaxScanMissId: number;
+
+  const cleanupDb = getServiceRoleClient();
+
+  async function maxScanMissId(): Promise<number> {
+    const { data, error } = await cleanupDb
+      .from("scan_misses")
+      .select("id")
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return data?.id ?? 0;
+  }
 
   beforeAll(async () => {
     initDataHeader = generateInitData(TEST_TELEGRAM_USER_ID);
 
     const db = getServiceRoleClient();
+
+    baselineMaxScanMissId = await maxScanMissId();
 
     // Find a real seeded product scan_codes row (kind='product') rather than
     // hardcoding a guessed code.
@@ -112,6 +136,17 @@ describe("POST /api/store/resolve (integration, live DB)", () => {
       .single();
     if (locationErr) throw locationErr;
     groupLocationName = locationRow.name;
+  });
+
+  afterAll(async () => {
+    const { error } = await cleanupDb
+      .from("scan_misses")
+      .delete()
+      .gt("id", baselineMaxScanMissId);
+    if (error) throw error;
+
+    // Sanity: nothing this suite logged survives into the dashboard's counts.
+    expect(await maxScanMissId()).toBeLessThanOrEqual(baselineMaxScanMissId);
   });
 
   it("resolves a real seeded product code to the matching product shape", async () => {

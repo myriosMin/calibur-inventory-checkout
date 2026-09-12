@@ -136,7 +136,9 @@ surface, and mixing two identity systems in one app costs more than it saves.
 | `SUPABASE_SERVICE_ROLE_KEY` | Vercel env | Server-only |
 | `NEXT_PUBLIC_SUPABASE_URL` | Vercel env | Public, used by `/admin` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Vercel env | Public, `/admin` only |
-| `CRON_SECRET` | Vercel env | Guards `/api/cron/*` |
+| `CRON_SECRET` | Vercel env | Guards `/api/cron/*` (cron endpoints are public URLs). Unset = every call rejected |
+| `TELEGRAM_ALERT_CHAT_ID` | Vercel env | Club **group** chat for low-stock / data-check / weekly-digest messages. A group, not a person, so alerts survive committee handover. Unset = those messages are skipped and the cron still runs |
+| `OVERDUE_THRESHOLD_DAYS` | Vercel env | Optional; days a member may hold a returnable item before the bot mentions it. Default 21 |
 
 ## Observability
 
@@ -147,8 +149,15 @@ Minimum useful set on the admin dashboard:
   missing or damaged label ([qr-labels.md](qr-labels.md))
 - Unknown or retired codes scanned, with counts
 - Bind queue depth
-- Failed submits
+- ~~Failed submits~~ — **not built, and not currently buildable.** A failed
+  submit never reaches the database (that is what "failed" means here), and
+  the cart is deliberately client state with client-side retry
+  ([flows.md](flows.md) §8), so nothing persists to count. Recording them
+  would need a new write path on the error branch of `/api/store/cart/submit`
+  — worth deciding on its own merits rather than smuggling in with a chart.
 - Stocktake variance by location
+- **Label health** — products consistently reached by search rather than
+  scan, with a reprint link ([qr-labels.md](qr-labels.md))
 
 ## Cost
 
@@ -163,6 +172,9 @@ spend is labels and possibly a label printer.
 - Does the club have a Vercel account, or should this sit under a personal one?
   A team account is worth setting up for handover, so access transfers with the
   committee rather than a graduating student.
-- Do we want Supabase's own backups, or a periodic CSV export for the club's
-  peace of mind? The latter is cheap and makes the committee more comfortable
-  about depending on a hosted service.
+- ~~Do we want Supabase's own backups, or a periodic CSV export for the club's
+  peace of mind?~~ **Resolved, implemented**: the dashboard exports three
+  CSVs on demand (catalog, holdings, movement ledger) via `src/lib/reports/export.ts`.
+  On demand rather than periodic — a scheduled export has nowhere to put a
+  file that a committee would actually find later, and a button someone
+  presses at handover is the case that mattered.
