@@ -77,7 +77,9 @@ schema changes rather than editing the live DB ad hoc.
 
 ## Architecture
 
-One Next.js app on Vercel + one Supabase project (Singapore Postgres + RLS).
+One Next.js app on Vercel + one Supabase project (Postgres + RLS, currently
+in `ap-south-1`/Mumbai — not Singapore, despite older doc text; self-hosting
+is planned).
 No Python, no separate service, no GPU/models — see `docs/tele-qr/architecture.md`
 for the full rationale (this replaced an earlier "camera + face recognition"
 design; that design's docs remain at `docs/face-id-and-cv/` for history only,

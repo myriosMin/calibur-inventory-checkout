@@ -86,7 +86,14 @@ committee member will ask:
 - **Telegram is not in Singapore.** Message content is minimal and contains no
   sensitive data, but the club should know the bot is a foreign service rather
   than assume everything stays in-country.
-- **Our own data stays in Singapore** — Supabase Singapore region.
+- **Our own data is currently in Mumbai, not Singapore.** The Supabase
+  project runs in `ap-south-1` (AWS Mumbai), despite earlier drafts of these
+  docs claiming a Singapore region — corrected here on 2026-09-12 once the
+  live project was actually checked. The club intends to **self-host Supabase**
+  later, which is why the project was not migrated to `ap-southeast-1` when
+  this was found. Until then, club data does leave Singapore, and whoever
+  reviews this for the parent body should be told that plainly rather than
+  discovering it.
 - Members already use Telegram for club communication, so this doesn't
   introduce a new relationship, only a new use of an existing one.
 

@@ -154,7 +154,7 @@ paths: [flows.md](flows.md).
 
 One Next.js app on Vercel: the Mini App at `/store`, the admin dashboard at
 `/admin`, the Telegram webhook and Mini App API as route handlers, and Vercel
-Cron for overdue and low-stock notifications. Supabase (Singapore) for Postgres
+Cron for overdue and low-stock notifications. Supabase (Mumbai) for Postgres
 and RLS. TypeScript throughout — no Python, no separate service.
 
 Details: [architecture.md](architecture.md).

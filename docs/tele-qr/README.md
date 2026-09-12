@@ -12,6 +12,11 @@ One of two candidate approaches, and the recommended one. See
 - [Operations](operations.md) — the human work of running it
 - [PDPA](pdpa.md) — personal data handling; no biometrics
 - [Roadmap](roadmap.md) — what ships when
+- [Checkpoint](checkpoint.md) — **current status snapshot; read this first when
+  picking the work back up**
+- [QA checklist](qa-checklist.md) — the on-device/physical verification that no
+  agent session can do, including the continuous-scan gate that must pass
+  before any labels are printed
 
 Shared with the other approach:
 

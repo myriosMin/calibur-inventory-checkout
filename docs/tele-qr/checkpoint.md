@@ -1,301 +1,158 @@
-# Checkpoint — 2026-09-07
+# Checkpoint — 2026-09-12
 
-Tracks progress against `/Users/myrios/.claude/plans/let-s-implement-this-docs-tele-qr-wondrous-parasol.md`
-("Tele-QR Checkout — Implementation Plan (Phases 1–3)"). Read that plan for
-full work-package detail; this doc is the status snapshot, not a replacement
-for it.
+Status snapshot. Read this first when picking the work back up.
 
-**Branch:** `tele-qr-mvp` (pushed, not merged to `main`; 1 commit: `6019330`).
-**Live:** https://calibur-checkout.vercel.app (Vercel project `calibur-checkout`,
-promoted to Production for a stable URL). Webhook registered against this URL.
+**Branch:** `tele-qr-mvp`. **Live:** https://calibur-checkout.vercel.app
+(Vercel project `calibur-checkout`). **Supabase:** `dholwxsxzasoafeqjovk`,
+migrations `0001`–`0023` applied.
 
----
-
-## Re-theme to match nuscalibur.com (not yet committed as of this writing)
-
-Superseded the light emerald/slate palette below with a dark theme matching
-the club's own site, pulled directly from its live CSS bundle (not guessed):
-`--rc-red: #DC2626` accent, near-black surfaces (`#0A0A0A` / `#171717` /
-`#1F1F1F` — these are exactly Tailwind's `neutral-950/900/800`), Rajdhani +
-Space Grotesk fonts, `0 0 20px` red glow on the primary CTA, `tracking-wide`
-uppercase button labels (matches their `letter-spacing: .025em` convention).
-Dark-only, no light/dark toggle (app has no theme switch to hang one off).
-
-- Fonts wired via `next/font/google` in `src/app/layout.tsx`
-  (`--font-display` / `--font-body`); `globals.css` applies Rajdhani to
-  `h1`/`h2`/`h3` only, Space Grotesk everywhere else -- kept off dense body
-  text (item names, quantities) so scannability isn't traded for branding.
-- `danger` Button variant moved to amber, not red -- red is now the primary
-  accent, so a destructive action needs its own hue to stay visually distinct
-  from "the main button."
-- Toast `success` stayed true green rather than reusing the new brand red,
-  since red-as-success would be a semantic collision with error/danger.
-- Recolor was role-based (page bg / card surface / structural border / muted
-  text / primary text), not a blind numeric swap -- light-theme grays don't
-  invert 1:1 into a dark palette. Caught and fixed two real bugs this
-  produced along the way: identical rest/hover colors on `QuantityPrompt`'s
-  bulk-quantity chips (lost hover feedback) and a bind-queue member-search
-  row whose hover went *darker* than its container instead of lighter.
-- Verified: `npm run build`, `npm run lint`, `npm test -- tests/unit` (58/58)
-  all clean, plus an SSR curl smoke-check confirming the neutral/red classes
-  and both font variables actually render. Still no browser-automation tool
-  in this environment -- same on-device caveat as the pass below.
+**Tests: 506 passing across 37 files.** `npm run lint` and `npm run build`
+clean. `npm run build` is the only typecheck — there is no separate script.
 
 ---
 
-## UI/UX redesign pass (not yet committed as of this writing)
+## TL;DR
 
-Goals: fewest possible taps for borrow/return, no emoji, uncluttered/minimal
-visual design. Applied across `/store` and (palette only) `/admin`:
+Phases 1–6 are built. **The system is feature-complete for the club's actual
+workflow** — provision members, label bins, borrow, return, restock, count,
+correct, get nudged, see the numbers.
 
-- **Palette**: `gray`/`blue` → `slate`/`emerald` app-wide (industrial neutral +
-  single accent), per a `ui-ux-pro-max` design-system query.
-- **Icons**: every emoji/glyph (🛒📷🔍✅❌✕✓) replaced with a small hand-rolled
-  SVG set (`src/components/ui/icons.tsx`) — kept dependency-free like the rest
-  of the UI kit rather than pulling in an icon library.
-- **Cart** (`src/app/store/components/Cart.tsx`): one full-width primary
-  "Done", a Scan more / Search secondary pair, Cancel demoted to a ghost
-  text-link in the header.
-- **Click reduction**: destination now auto-fills from a remembered last
-  choice (`localStorage`, overridable via "Change") instead of asking every
-  session — resolves `flows.md`'s open question. Return's "Returning from
-  where?" screen is skipped when there's only one possible source. Loose-tier
-  quantity prompt was deliberately **left alone** — `flows.md` documents
-  "Took the last of it" as a future restock-flag trigger, not redundant UI.
-- New `CHANGE_DEST` cart-reducer action (distinct from the one-shot
-  `SET_DEST`) backs the "Change destination" override; covered by a unit test.
-- **Scan + Borrow merged** on the top-level chooser (`src/app/store/page.tsx`):
-  the standalone "Scan" button was a redundant third doorway to the same
-  borrow cart, differing from "Borrow" only in auto-opening the camera.
-  "Borrow" now opens the camera immediately (renamed handler `handleBorrow`);
-  the chooser is 2 buttons (Borrow, Return), not 3. Return intentionally stays
-  camera-free per `flows.md` ("Returns never scan").
-- Verified: `npm run build`, `npm run lint`, and `npm test -- tests/unit` all
-  clean. No browser-automation tool was available in this environment, so the
-  redesigned flows were checked via SSR smoke-curls + code review, not
-  click-through in an actual browser — worth a manual pass before relying on
-  it for WP24's on-device testing.
+Two things stand between here and real use, and neither is code:
+
+1. **The continuous-scan gate has never been tested on a real phone.** Every
+   phase is built on the assumption that `showScanQrPopup` keeps scanning on
+   both iOS and Android. `roadmap.md` Phase 0 says to verify it before anything
+   else; it never was. See [qa-checklist.md](qa-checklist.md) §0.
+2. **The catalog is still fixtures.** The bench-literate review pass
+   ([../catalog-migration.md](../catalog-migration.md)) is 3–5 days of human
+   work and remains the project's critical path.
 
 ---
 
-## Continuous-scan seam fix (not yet on-device verified)
+## What was built this pass (Phases 4–6)
 
-The camera "worked" but its follow-up sheets (destination picker / quantity
-prompt / group-pick) rendered *behind* the still-open native
-`showScanQrPopup` overlay, because `handleScanMore`
-(`src/app/store/borrow/page.tsx`) always returned `false` from the scan
-callback to keep the popup open for the next item — the intended behavior
-per `flows.md` §2, but it meant every per-item follow-up question was
-visually trapped under the camera until the member manually closed it.
+Nine migrations (`0015`–`0023`) plus six feature areas.
 
-Fixed by flipping the sequencing: the popup now closes the instant a code is
-scanned (`return true`), letting the follow-up sheet take over the screen,
-and a `resumeScanRef`/`scanResumeTick` handshake reopens the popup
-automatically once that item's chain fully resolves — item added to cart,
-picker/prompt aborted, or the resolve call itself failed (404/network). The
-ref exists specifically so a search- or group-pick-originated item (which
-never armed it) doesn't spuriously reopen the camera. `npm run build`,
-`npm run lint`, and `npm test -- tests/unit` all clean; **not yet exercised
-on-device** — this is exactly the kind of interaction WP24 item #9 (gate:
-continuous scan on real iOS/Android) needs to confirm before relying on it.
+### Defects found and fixed in existing work
 
----
+These were already live and wrong; they are the reason this pass touched the
+schema at all.
 
-## Text receipt after submit (new)
+- **Nothing could add stock to the store.** `submit_cart` only wrote
+  borrow/return/consume, so an imported catalog would start at zero and every
+  borrow would drive `holdings` negative. Fixed by `admin_restock` +
+  `/admin/restock`. This blocked launch and appeared in no roadmap phase.
+- **`stock_summary.qty_out` computed nonsense** — it summed every non-store
+  holder, folding in `consumed` (parts that are gone, not "outside") and
+  `adjustment`, whose balance is large and negative because every seed movement
+  sources from it. The one view reproducing the spreadsheet's headline number.
+  Nothing read it, so fixing it was free.
+- **The pseudo-holders were not singletons.** Unique only on `(kind, name)`, so
+  `/admin/holders` could create a second active `store` and `submit_cart`'s
+  `limit 1` would silently split stock across two ledger identities.
+- **`stock_movements` was not actually append-only.** The admin RLS policy was
+  `FOR ALL`, so an admin could delete the very row a discrepancy pointed at.
+- **`submit_cart` had no idempotency.** A double-tap of Done, or the documented
+  keep-the-cart-and-retry path firing after a request that timed out but had
+  committed, wrote every movement twice.
+- **`generate.ts` imported `node:crypto` into a client component.**
 
-After a successful `submit_cart` RPC call in
-`src/app/api/store/cart/submit/route.ts`, the bot now DMs the member a
-plain-text summary — `Borrowed -> <holder>` / `Returned from <holder>` plus
-one `- <name> x<qty> <unit>` line per cart line — via
-`sendMessageSafely` (promoted from the webhook route's previously-local
-`sendReplySafely` into `src/lib/telegram/bot-api.ts`, and now shared by both
-routes). Message text itself is built by the pure, unit-tested
-`buildReceiptText` in `src/lib/telegram/receipt.ts`
-(`tests/unit/receipt.test.ts`). Product names/units and the holder name are
-looked up fresh from the DB rather than trusted from the client, since the
-whole point is an accurate record of what was actually written.
+### New capability
 
-This is deliberately best-effort and non-blocking: the lookup + send is
-wrapped in its own `try/catch` *after* the RPC has already committed, so a
-Telegram-side failure (or a lookup error) is logged and swallowed rather
-than turning a successful submit into a 500 — same contract as the
-webhook's existing sends. Verified against the live dev DB via the
-`cart-submit` integration suite (uses a fabricated `telegram_user_id`, so
-every one of these sends fails "chat not found" by design — confirms the
-swallow path without a real chat to check the message in). **Not yet
-confirmed to actually arrive in a real Telegram chat** — worth a quick
-on-device check alongside WP24.
+| Area | What |
+|---|---|
+| Stock in | `/admin/restock`, `admin_restock` |
+| Ledger | `/admin/movements` with filters; corrections as mirror rows (`admin_reverse_movement`); `/admin/holdings` per holder and per robot |
+| Labels | `qrcode` dep, bulk code generation, A4 `@media print` sheet, single reprint. **QR-v3 53-byte budget asserted at build time** |
+| Stocktake | Phone-first walk (localStorage, no draft table), `admin_commit_stocktake`, variance report |
+| Member-facing | `/store/mine`, `/api/store/me/*`, bot `/myitems` + `/help` + fallback, cart idempotency, "took the last of it" |
+| Member ops | Roster CSV import, offboarding/unbind, `bootstrap-admin.ts`, `get-chat-id.ts` |
+| Cron | `/api/cron/daily` — overdue, low stock, weekly digest, 90-day bind-attempt purge |
+| Dashboard | `/admin` observability, label health, CSV export |
 
----
+### Design decisions worth not re-litigating
 
-## Remembered-destination auto-fill now surfaces itself (fix)
+- **The new `admin_*` RPCs are `SECURITY INVOKER`, not `DEFINER`.** Admins
+  already hold unrestricted INSERT on those tables via RLS, so a DEFINER
+  function gated on `is_admin()` would grant zero extra capability while adding
+  a permanent RLS-bypass path. The internal guard is a fail-fast message; RLS
+  is the boundary. `submit_cart` stays DEFINER and service-role-only because it
+  takes `p_member_id` as an unchecked parameter — **do not harmonise them.**
+- **Borrows are never blocked on insufficient stock.** A member standing there
+  with the part in their hand should not be argued with, and blocking teaches
+  people to stop logging. Negative holdings are surfaced as a data-quality
+  signal instead, and almost always mean a missing opening balance.
+- **Overdue uses a "days out" proxy, not `expected_return_date`** — dates
+  nobody sets are worse than no dates. Only `member`-held stock is nudged; a
+  motor bolted to Hero is where it belongs.
+- **Notifications are edge-triggered or cadence-limited**, never "fire because
+  the condition is still true". `flows.md` §7: a bot that nags gets muted.
+- **Stocktake has no draft table** — the walk is client state in `localStorage`
+  and commits in one RPC, the same pattern as the cart.
 
-Raised by the user: the remembered-last-destination auto-fill
-(`LAST_DEST_KEY` in `src/app/store/borrow/page.tsx`, `localStorage`,
-persists indefinitely across every future cart on the device) was
-completely silent beyond a small "Change" link in the cart header — easy to
-not notice, especially now that continuous scan (previous entry) reopens
-the camera automatically and gives you less time looking at that header.
-Fixed by surfacing an info toast ("Assuming `<holder>` as destination.")
-with a "Change" action the moment the auto-fill fires, once per cart. Only
-wrinkle: if the auto-filled item needs a quantity prompt, that prompt and
-the toast can be on screen together, so tapping the toast's "Change" drops
-the in-flight item (same as backing out of the quantity prompt) rather than
-stacking the destination-picker sheet on top of it — re-scan/re-pick it
-after choosing the right destination. `handleDestinationSelect` was also
-fixed to resume continuous scan when it has no pending item to proceed
-with (previously only `proceedToQuantity` did this, which this new toast
-path bypasses). `npm run build`, `npm run lint`, `npm test -- tests/unit`
-clean; not yet exercised on-device.
+## Bugs found by the branch code review (all fixed)
 
----
-
-## Done: Phases 1–3 (all 24 work packages)
-
-**Schema (WP1):** 14 migrations applied to the live Supabase project —
-`members`, `holders`, `products`, `scan_codes`, `stock_movements`,
-`stock_counts`, `telegram_bind_attempts`, the `holdings`/`holdings_sources`
-views, RLS on every table, the `submit_cart` atomic-write function, and the
-`create_member_holder` trigger. Full RLS + `is_admin()` correctness verified
-against a real authenticated admin session, not just service-role calls (see
-"Bugs found" below).
-
-**Libraries (WP2–WP4):** Telegram init-data/webhook HMAC verification,
-opaque scan-code generation (`src/lib/codes/generate.ts`), and the shared UI
-kit (`Button`, `Sheet`, `Stepper`, `Toast`).
-
-**Glue (WP5–WP6):** Supabase browser/server/middleware clients + generated
-DB types; `requireMember` server-side auth helper used by every `/api/store/*`
-route.
-
-**Scripts (WP7–WP9):** `seed-fixtures.ts` (dev fixture data — products,
-holders, robots, test members), `import-catalog.ts` (parses the real 538-row
-catalog CSV into a flagged review CSV per `docs/catalog-migration.md`),
-`create-admin-user.ts`, `dev-mock-init-data.ts`.
-
-**API routes (WP10–WP14):** `/api/tg/webhook` (identity binding),
-`/api/store/resolve`, `/api/store/search`, `/api/store/holdings` (+
-`/sources`), `/api/store/cart/submit` (atomic via `submit_cart`). Also added
-beyond the original plan: `/api/store/destinations` (see "beyond plan"
-below).
-
-**Mini App (WP15–WP17):** `/store` entry + continuous-scan client
-(`webapp-client.ts`), the borrow flow (cart, destination picker, per-tier
-quantity prompts, search fallback), the return flow (holdings checklist).
-
-**Admin (WP18–WP22):** auth-gated `/admin` (middleware + layout + login),
-and CRUD/management pages for **products**, **holders**, **scan-codes**
-(create/retire/regenerate), **members** (create/edit — closes gap #1 below),
-and the **bind-queue**. All talk to Supabase directly from the browser via
-RLS — no bespoke `/api/admin/*` layer, per the plan's decision #8.
-
-**Tests (WP23):** `tests/integration/*.test.ts` covers all 5 Tier-4 routes
-end-to-end (bind → resolve → borrow → holdings → return) against the real
-dev Supabase project, plus unit tests for the cart reducer, code generator,
-catalog import, and init-data verification. **94/94 passing.**
-`npm run build` and `npm run lint` both clean.
+Two were half-finished features rather than nits: **returns never sent the
+idempotency token** (so the fix applied to only half the flows), and **the bot
+answered commands in group chats** — which bites precisely because the alert
+feature requires the bot to join the club group, where `/start` would have run
+identity binding and replied publicly. Also: label health reported every
+group-labelled product (the whole resistor book) as unlabelled; two admin reads
+would have silently truncated at PostgREST's 1000-row cap; the weekly digest
+could exceed Telegram's 4096-char limit and report success anyway.
 
 ---
 
-## Done beyond the original plan
+## Known gaps
 
-- **`/api/store/destinations`** — the plan's borrow flow only had an endpoint
-  returning *previously-used* destinations, which would make it impossible
-  for a new member to borrow to a robot for the first time. Added a proper
-  endpoint backed by `holders`.
-- **Deployment (today):** linked the existing Vercel project, set the 5 env
-  vars the app actually reads, deployed, promoted to Production for a stable
-  URL, and re-pointed the bot's webhook at it.
-- **5 test QR labels** generated (SVG, encode real `t.me/…?startapp=<code>`
-  deep links to live catalog rows) and sent to the user for hands-on testing.
+### 1. On-device verification — the real one
+Nothing in [qa-checklist.md](qa-checklist.md) has been done. No browser
+automation or physical device is available in an agent session, and the
+continuous-scan gate (§0) must pass **before any labels are printed**.
 
-## Bugs found and fixed during supervision (not in the plan)
+### 2. Data
+The catalog review pass and the member roster import are human work. Tooling
+exists for both (`import-catalog.ts`, `/admin/members` CSV import); the work
+itself does not. **Opening balances must be entered via `/admin/restock`** or
+holdings go negative on every borrow.
 
-1. `submit_cart` was callable by the public anon key (missing `REVOKE`) —
-   would have let unauthenticated callers write stock movements.
-2. `is_admin()` caused infinite RLS recursion under a real authenticated
-   session — invisible to every prior route since they all used the
-   service-role key, which bypasses RLS entirely.
-3. `is_admin()`'s effective grant to `anon` survived an initial `REVOKE …
-   FROM anon` because Postgres also grants `EXECUTE` to the implicit
-   `PUBLIC` pseudo-role, which every role inherits regardless of role-specific
-   revokes — fixed by also revoking from `PUBLIC` (migration `0014`).
-4. Three functions had a mutable `search_path` (minor hijack risk).
-5. `/api/store/resolve`'s retired-code 404 reused a module-level singleton
-   `Response` object — since a `Response` body is a single-use stream, every
-   404 after the first silently returned an empty body. Found by the WP21
-   subagent while verifying scan-code retire/regenerate.
-6. Vitest's default per-file parallelism raced integration test files
-   against shared live fixture rows — fixed via `fileParallelism: false`
-   rather than the plan's suggested truncate-and-reseed script (simpler,
-   same effect, costs some wall-clock time).
+### 3. "Failed submits" is on the observability list and is not buildable
+A failed submit never reaches the database and the cart is client state with
+client-side retry, so nothing persists to count. Recording it needs a new write
+path on the submit error branch — its own decision, noted in `architecture.md`.
 
----
+### 4. Operational notes for whoever is next
+- **`SUPABASE_DB_PASSWORD` in `.env.local` is stale**, and port 5432 is blocked
+  from at least some networks, so `supabase db push` does not work. Migrations
+  `0015`–`0023` were applied with `supabase db query --linked -f <file>` (the
+  Management API) and recorded in `supabase_migrations.schema_migrations` by
+  hand, matching the timestamp-style versions the earlier MCP-applied
+  migrations use. `supabase migration list` reports local-only rows as a
+  result — a pre-existing divergence that affects `0001`–`0014` equally.
+- **The project is in `ap-south-1` (Mumbai), not Singapore.** Earlier drafts of
+  these docs claimed otherwise; corrected on 2026-09-12. Not migrated because
+  the club intends to self-host Supabase later. See [pdpa.md](pdpa.md).
+- The dev project contains a member bound to a **real** Telegram account, so
+  anything that sends messages must be dry-run-guarded in tests. The cron
+  integration test does this.
+- Integration tests hit the live dev Supabase and the real Bot API.
+  `fileParallelism: false` is load-bearing — they share fixture rows.
 
-## Known gaps / left to do
-
-### 1. ~~No way to add a real member yet~~ — **Resolved**: `/admin/members`
-built (`src/app/admin/members/page.tsx` — list + create; `[id]/page.tsx` —
-edit), mirroring the products/holders pattern. Creating a member here also
-fires the existing `create_member_holder` trigger, so no separate holder-row
-step is needed. One thing still inherent to any admin-gated system and not
-this page's job: **the very first real admin** still has to be bootstrapped
-by hand once (a `members` row with a matching `nus_email` + `role = 'admin'`,
-plus `scripts/create-admin-user.ts` for the Supabase Auth side) — chicken/egg,
-since you need `/admin` access to reach this page in the first place. Every
-admin after that first one can be added through the page itself. Telegram
-binding (`telegram_user_id`) still isn't set here by design — that only ever
-happens via the bind-queue flow when the member first messages the bot.
-
-### 2. ~~WP23's CI-readiness breadcrumb was skipped~~ — **Resolved**:
-`tests/integration/README.md` now documents the env vars a CI runner needs.
-
-### 3. WP24 — Manual verification checklist (14 items, real devices/bot)
-This is the one part of the plan that fundamentally cannot be done inside an
-agent session. Status of each item as of today:
-
-| # | Item | Status |
-|---|---|---|
-| 1 | BotFather: confirm bot username + Mini App short name are final | **Unconfirmed** — bot/app names already exist in `.env.local` (`calibur_checkout_bot` / `app`), but whether BotFather's Mini App URL actually points at the deployed URL has not been verified (flagged to the user; can't check via Bot API) |
-| 2 | Real bot token/username in `.env.local` | Done — already present |
-| 3 | Deploy a preview build to Vercel (public HTTPS) | Done — promoted to Production instead of preview, for URL stability |
-| 4 | Point BotFather's Mini App URL at the deployed URL | **Not confirmed** — same as #1 |
-| 5 | Set the Telegram webhook + confirm via `getWebhookInfo` | Done — webhook set to `https://calibur-checkout.vercel.app/api/tg/webhook` |
-| 6 | Real phone `/start`, handle matches a seeded member → confirm bind | **Not done** — the tooling exists (`/admin/members`, gap #1 above) but nobody has created the user's real `members` row through it yet |
-| 7 | `/start` from a second, unrelated account → lands in bind queue, admin resolves it | **Not done** |
-| 8 | Generate a real QR, scan with phone camera, confirm Mini App opens with item pre-added | Partially done — 5 QR SVGs generated and sent to the user; on-device scan not yet confirmed |
-| 9 | **Gate, do not skip:** `showScanQrPopup` continuous-scan callback works on both iOS and Android | **Not done** — this is the load-bearing assumption for the whole continuous-scan design (`roadmap.md` Phase 0). Must pass on both platforms before any label printing. |
-| 10 | Full borrow flow on-device, verify `stock_movements` rows | **Not done** |
-| 11 | Full return flow on-device against holdings from #10 | **Not done** |
-| 12 | Deny camera permission → search-only path still completes a borrow | **Not done** |
-| 13 | Kill network mid-submit → cart preserved with retry, not cleared | **Not done** |
-| 14 | Log into `/admin`, walk bind-queue resolution + product creation + scan-code creation once each | **Not done** on the deployed instance (was done repeatedly against the live DB during development, but not as a fresh end-to-end admin walkthrough post-deploy) |
-
-### 4. Explicitly out of scope for this plan (Phase 4/5, physical work)
-Not gaps — deliberately deferred per the plan's stated scope:
-- Full Phase 4 admin dashboard (batch label printing, movement-history
-  corrections).
-- Phase 5: stocktake UI, Vercel Cron notifications (asset-overdue nudges,
-  low-stock alerts, weekly digest) — see `flows.md` §6–7 for the spec when
-  this is picked up.
-- The real 538-row bench-literate catalog review pass (human task, per
-  `docs/catalog-migration.md`) — tooling exists (`import-catalog.ts`), the
-  review itself doesn't.
-- Physical label printing (~360–500 labels) — gated on WP24 item #9 passing
-  on both platforms, and on a physical shelf walk to finalize the location
-  count (`qr-labels.md`'s open question).
-- Supabase Auth "leaked password protection" is disabled on the project — a
-  one-toggle fix in the dashboard, unrelated to any code here.
+### 5. Deferred, deliberately
+Per-robot BOM targets (needs a table and an owner); a `supplier` holder kind to
+separate "we bought 200 more" from "the count was off by 12" (`reason` already
+distinguishes them, so the report is recoverable either way); pagination on
+`/admin/movements` beyond the shared row cap.
 
 ---
 
-## Immediate next actions (suggested order)
+## Immediate next actions
 
-1. Bootstrap the first real admin (still requires the one-time manual step in
-   gap #1 above — a direct `members` insert + `create-admin-user.ts`), then
-   use the now-built `/admin/members` page for the user's own real row (name,
-   email, Telegram handle) so WP24 items #6, #9–14 become possible to run at
-   all, and for onboarding everyone after that.
-2. Confirm BotFather's Mini App URL matches the deployed URL (item #1/#4).
-3. Run WP24 items #6–14 for real, with item #9 (continuous scan on iOS +
-   Android) as the hard gate before anything else downstream matters.
+1. **Run [qa-checklist.md](qa-checklist.md) §0 on a real iOS and Android
+   phone.** Nothing downstream matters until this passes.
+2. Rename the Mini App short name to `s` in BotFather (§1) — keeps every QR at
+   version 3. Free now, a reprint-everything event later.
+3. Set `CRON_SECRET` and `TELEGRAM_ALERT_CHAT_ID` in Vercel.
+4. Bootstrap the first real admin (`npx tsx scripts/bootstrap-admin.ts`), then
+   import the roster.
+5. The catalog review pass, then opening balances via `/admin/restock`.

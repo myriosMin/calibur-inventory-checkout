@@ -34,6 +34,12 @@ The entire design rests on one assumption. Test it before anything else.
 flow collapses to app-switching per item and the design needs rethinking before
 any labels are printed. Everything downstream assumes this passes.
 
+> **Status as of 2026-09-12: STILL UNVERIFIED ON REAL DEVICES.** Phases 1–6 are
+> built on top of this assumption without it ever having been tested on an
+> actual iOS and Android handset. It remains the one thing that could invalidate
+> the design, and it must pass **before any labels are printed** — see
+> `qa-checklist.md`.
+
 Also settle here, because it's irreversible later: **the bot and app names**.
 They're baked into every QR ([qr-labels.md](qr-labels.md)).
 
@@ -76,7 +82,7 @@ The milestone that matters.
 **Done when:** the club can stop maintaining the "Qty outside" column by hand.
 Everything after this is refinement.
 
-## Phase 4 — Admin dashboard
+## Phase 4 — Admin dashboard — **built** (2026-09-12)
 
 - Catalog CRUD, member management, bind queue
 - Holdings and per-robot views
@@ -86,20 +92,22 @@ Everything after this is refinement.
 Some of this is needed *during* Phase 1, so build the catalog CRUD early and
 the rest here.
 
-## Phase 5 — Stocktake and notifications
+## Phase 5 — Stocktake and notifications — **built** (2026-09-12)
 
 - Stocktake flow by location, variance report
 - Vercel Cron: overdue, low stock, weekly digest
 - Scan-vs-search label health report
 
-## Phase 6 — Refinements
+## Phase 6 — Refinements — **mostly built** (2026-09-12)
 
 Only once the above is real:
 
-- Plain-chat fallback in the bot for when the Mini App won't load
-- "My items" and stock queries in the bot
-- Remember last destination as a default
-- Per-robot BOM targets
+- ~~Plain-chat fallback in the bot for when the Mini App won't load~~ — built
+- ~~"My items" and stock queries in the bot~~ — built (`/myitems`, `/help`,
+  plus `/store/mine` in the Mini App, which `pdpa.md` requires anyway)
+- ~~Remember last destination as a default~~ — built
+- Per-robot BOM targets — **still deferred**; needs a `robot_bom` table and,
+  more importantly, an owner willing to maintain it
 
 ## Success criteria
 

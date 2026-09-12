@@ -215,7 +215,7 @@ create table stock_movements (
   qty              integer not null check (qty > 0),
   session_id       uuid references sessions(id),
   actor_member_id  uuid references members(id),
-  reason           text,             -- borrow | return | consume | adjust | seed
+  reason           text not null,    -- see the CHECK below (migration 0017)
   scan_code        text,             -- what was scanned, for label diagnostics
   entry_method     text,             -- scan | group_pick | search | admin
   created_at       timestamptz not null default now(),
@@ -225,6 +225,27 @@ create index on stock_movements (product_id, created_at desc);
 create index on stock_movements (to_holder_id, product_id);
 create index on stock_movements (session_id);
 ```
+
+`reason` was free text until migration `0017`, which pinned it to a CHECK.
+The documented `adjust` value **was never once written** and has been retired
+in favour of two signed literals, so a variance query is
+`where reason = 'stocktake_loss'` rather than a join to `holders` to work out
+which way the movement went:
+
+| `reason` | Written by |
+|---|---|
+| `borrow` / `consume` / `return` | `submit_cart` |
+| `return_adjustment` | `submit_cart`, when more is returned than was logged out |
+| `seed` | `scripts/seed-fixtures.ts` |
+| `restock` | `admin_restock` — newly received stock |
+| `stocktake_gain` / `stocktake_loss` | `admin_commit_stocktake` |
+| `correction` | `admin_reverse_movement` |
+
+Migration `0021` also makes the table **append-only in practice**: the admin
+RLS policy was `FOR ALL`, so an admin could delete the very row a discrepancy
+pointed at. It is now split into `SELECT` + `INSERT`, and a correction is a
+mirror row carrying `reverses_movement_id`, with a partial unique index making
+double-reversal structurally impossible.
 
 `scan_code` and `entry_method` are the cheap diagnostics: a label that gets
 scanned and then abandoned is probably damaged or on the wrong bin, and a
@@ -303,12 +324,18 @@ Supabase RLS:
 
 ## Open questions
 
-- Should `loose` products carry a `level` enum (`ok` / `low` / `empty`) as a
-  column, or be derived from the most recent movement? Column is simpler and
-  the data is tiny; leaning column.
-- Do we need `expected_return_date` on asset borrows, or is "out for more than
-  N days" a good enough proxy for overdue? Leaning proxy — dates nobody sets
-  are worse than no dates.
+- ~~Should `loose` products carry a `level` enum (`ok` / `low` / `empty`) as a
+  column, or be derived from the most recent movement?~~ **Resolved, neither**:
+  "Took the last of it" writes a zero-quantity `stock_counts` row against the
+  store holder, so the flag lives in the table that already exists for
+  "somebody physically looked at this shelf". No new column, and the restock
+  signal lands in the same place a stocktake would put it.
+- ~~Do we need `expected_return_date` on asset borrows, or is "out for more
+  than N days" a good enough proxy for overdue?~~ **Resolved, proxy** — dates
+  nobody sets are worse than no dates. `/api/cron/daily` reconstructs FIFO lots
+  from the raw ledger and nudges at 21/28/35 days (`OVERDUE_THRESHOLD_DAYS`).
+  Only `member`-held stock is nudged: a motor bolted to Hero is where it
+  belongs.
 - Per-robot BOM targets (what a robot *should* have vs. what it holds) would
   make the dashboard much more useful, but need a `robot_bom` table and an
   owner. Deferred.

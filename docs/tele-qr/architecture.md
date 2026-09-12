@@ -2,7 +2,8 @@
 
 ## TL;DR
 
-- **One Next.js app on Vercel + Supabase (Singapore). TypeScript throughout, no
+- **One Next.js app on Vercel + Supabase (currently `ap-south-1`/Mumbai; see
+  [pdpa.md](pdpa.md)). TypeScript throughout, no
   Python, no separate service.**
 - `/store` is the Mini App, `/admin` is the dashboard, `/api/*` are route
   handlers, Vercel Cron drives notifications.
@@ -38,7 +39,7 @@
                          │ service role
                          ▼
               ┌──────────────────────┐
-              │ Supabase (Singapore) │
+              │ Supabase (Mumbai)    │
               │ Postgres + RLS       │
               │ admin auth           │
               └──────────────────────┘

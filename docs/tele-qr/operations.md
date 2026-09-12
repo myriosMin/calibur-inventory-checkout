@@ -105,9 +105,19 @@ Realistically ~30 hrs if the stocktake cadence relaxes for stable locations.
 The club buys constantly, so this path must stay cheap. ~3 minutes per SKU:
 
 1. Create the product in the admin UI (name, tier, category, location, spec)
-2. Generate and print the label
+   — `/admin/products`
+2. Generate and print the label — `/admin/labels` (single label, or batch the
+   whole location if you are relabelling a shelf)
 3. Stick it
-4. Record the received quantity as a `restock` movement
+4. Record the received quantity — `/admin/restock`
+
+**Opening balances matter more than they look.** Until a product has been
+restocked at least once, the ledger thinks the store holds zero of it, and
+every borrow drives its holding negative. Borrows are deliberately never
+blocked on insufficient stock — a member standing there with the part in their
+hand should not be argued with — so a negative balance is a *data-quality
+signal*, surfaced on the dashboard, and almost always means a missing opening
+balance rather than a missing part.
 
 **If this ever takes longer than five minutes, people stop doing it and the
 catalog drifts out of date** — which is precisely how the spreadsheet failed.
@@ -140,7 +150,10 @@ That's a UX bug to fix, not a person to chase. This is an honour system.
 Unlike the CV approach, this system has a physical component that degrades.
 Watch the **scan vs. search ratio** on the dashboard: a product consistently
 reached by search almost certainly has a missing or damaged sticker. Reprint on
-that signal rather than waiting for a complaint.
+that signal rather than waiting for a complaint — the dashboard's label-health
+card lists the suspects and links straight to a reprint, and the
+unknown/retired-code card catches stickers that are still being scanned after
+their code was retired.
 
 ## Part 3 — The expensive events
 
