@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { constantTimeEquals } from "@/lib/server/secret-compare";
 
 /**
  * Verifies the `X-Telegram-Bot-Api-Secret-Token` header Telegram sends with
@@ -6,23 +6,14 @@ import { timingSafeEqual } from "node:crypto";
  * webhook was registered.
  *
  * The secret token is not attacker-supplied-to-be-forged the same way an
- * HMAC signature is, but we still use `timingSafeEqual` for consistency and
- * defense in depth.
+ * HMAC signature is, but we still use a constant-time compare for
+ * consistency and defense in depth. The compare itself now lives in
+ * `src/lib/server/secret-compare.ts`, shared with the `CRON_SECRET` check on
+ * `/api/cron/daily` — both are "a public URL guarded by one header".
  */
 export function isValidWebhookSecret(
   headerValue: string | null,
   expected: string,
 ): boolean {
-  if (!headerValue || !expected) {
-    return false;
-  }
-
-  const headerBuf = Buffer.from(headerValue, "utf8");
-  const expectedBuf = Buffer.from(expected, "utf8");
-
-  if (headerBuf.length !== expectedBuf.length) {
-    return false;
-  }
-
-  return timingSafeEqual(headerBuf, expectedBuf);
+  return constantTimeEquals(headerValue, expected);
 }
