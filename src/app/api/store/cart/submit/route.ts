@@ -13,6 +13,10 @@ const lineSchema = z.object({
   qty: z.number().int().positive(),
   scanCode: z.string().min(1).optional(),
   entryMethod: z.enum(["scan", "group_pick", "search"]),
+  /** `loose` tier only: "Took the last of it" rather than "Took some"
+   * (docs/tele-qr/flows.md §4). Recorded after the commit as a
+   * level-is-now-empty count -- see recordEmptyLevels below. */
+  tookLast: z.boolean().optional(),
 });
 
 const bodySchema = z
@@ -20,6 +24,13 @@ const bodySchema = z
     mode: z.enum(["borrow", "return"]),
     destHolderId: z.string().min(1).optional(),
     sourceHolderId: z.string().min(1).optional(),
+    /** The cart's idempotency key, minted once per cart by the client
+     * (src/app/store/components/cartReducer.ts) and re-sent unchanged on
+     * every retry. `.strict()` rejects UNKNOWN keys, not absent optional
+     * ones, so a caller that omits this -- including every existing
+     * integration test -- still gets byte-identical 0010 behaviour: a NULL
+     * token never conflicts on the NULLS-DISTINCT unique index. */
+    clientToken: z.string().uuid().optional(),
     lines: z.array(lineSchema).nonempty(),
   })
   .strict()
@@ -39,6 +50,87 @@ const bodySchema = z
       });
     }
   });
+
+/**
+ * Record "took the last of it" for every `loose` line flagged by the client
+ * (docs/tele-qr/flows.md §4: "loose items never get an exact count -- 'took
+ * the last of it' sets the level to empty and raises a restock flag").
+ *
+ * Shape, and why this shape: a `loose` item's quantity is meaningless by
+ * definition, so the signal cannot live in `stock_movements.qty` (which is
+ * `check (qty > 0)` and already carries the 1 the member took). What it is,
+ * exactly, is a count: "as of now, the store holds none of this." That is
+ * what `stock_counts` records -- product, holder, counted_qty, expected_qty,
+ * who, and which session -- so the flag is a first-class row a low-stock
+ * cron or an admin can query (`counted_qty = 0`), not a parsed note.
+ *
+ * What it deliberately does NOT do is write the variance movement that would
+ * actually zero the store's ledger balance. That movement belongs inside
+ * submit_cart's transaction, not in a second round-trip after the commit,
+ * and getting it there needs an RPC signature change -- see the report. The
+ * row written here is the flag; the correction remains an admin action.
+ *
+ * Best-effort and after the commit, exactly like the receipt below: the cart
+ * is already written, so nothing here may turn a successful submit into a
+ * 500. On an idempotent replay the same session id comes back and the
+ * (session_id, product_id) unique index turns the re-insert into a no-op
+ * 23505, which is the correct outcome.
+ */
+async function recordEmptyLevels(
+  supabase: ReturnType<typeof getServiceRoleClient>,
+  sessionId: string,
+  memberId: string,
+  productIds: string[],
+) {
+  const { data: looseProducts, error: productsError } = await supabase
+    .from("products")
+    .select("id")
+    .in("id", productIds)
+    // Trust the tier from the DB, never the client: `tookLast` on an asset
+    // or bulk line is a client bug (or a forged body) and must not produce a
+    // count row.
+    .eq("tier", "loose")
+    .eq("active", true);
+  if (productsError) throw productsError;
+  if (!looseProducts || looseProducts.length === 0) return;
+
+  const { data: storeHolder, error: storeError } = await supabase
+    .from("holders")
+    .select("id")
+    .eq("kind", "store")
+    .eq("active", true)
+    .single();
+  if (storeError) throw storeError;
+
+  const looseIds = looseProducts.map((product) => product.id);
+  const { data: storeHoldings, error: holdingsError } = await supabase
+    .from("holdings")
+    .select("product_id, qty")
+    .eq("holder_id", storeHolder.id)
+    .in("product_id", looseIds);
+  if (holdingsError) throw holdingsError;
+
+  // Post-commit balance: what the ledger still thinks is on the shelf after
+  // this cart was written. That is the number the member just contradicted,
+  // so it is the right `expected_qty` for the variance an admin will see.
+  const expectedByProductId = new Map(
+    (storeHoldings ?? []).map((row) => [row.product_id, Math.round(row.qty ?? 0)]),
+  );
+
+  const { error: insertError } = await supabase.from("stock_counts").insert(
+    looseIds.map((productId) => ({
+      product_id: productId,
+      holder_id: storeHolder.id,
+      counted_qty: 0,
+      expected_qty: expectedByProductId.get(productId) ?? 0,
+      counted_by: memberId,
+      session_id: sessionId,
+      note: "Reported empty from the Mini App (took the last of it)",
+    })),
+  );
+  // 23505 = the replay case above; anything else is worth a log line.
+  if (insertError && insertError.code !== "23505") throw insertError;
+}
 
 export async function POST(request: Request) {
   // Validation happens before any auth/DB call: a malformed body must never
@@ -63,7 +155,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const { mode, destHolderId, sourceHolderId, lines } = parsed.data;
+  const { mode, destHolderId, sourceHolderId, clientToken, lines } = parsed.data;
   const supabase = getServiceRoleClient();
 
   // The generated Args type for submit_cart declares p_dest_holder_id /
@@ -77,6 +169,9 @@ export async function POST(request: Request) {
     p_source_holder_id: (sourceHolderId ?? null) as unknown as string,
     p_source: "miniapp",
     p_lines: lines,
+    // Omitted from the JSON body entirely when undefined, so submit_cart's
+    // `default null` applies and dedup is simply off for that call.
+    p_client_token: clientToken,
   });
 
   if (error) {
@@ -85,6 +180,20 @@ export async function POST(request: Request) {
     // transaction contract: the client must not clear its cart on a 500).
     console.error("submit_cart RPC failed:", error);
     return NextResponse.json({ error: "submit_failed" }, { status: 500 });
+  }
+
+  // Restock flag for `loose` lines the member marked "took the last of it".
+  // Same best-effort positioning as the receipt: after the commit, never
+  // able to fail it.
+  const emptiedProductIds = [
+    ...new Set(lines.filter((line) => line.tookLast).map((line) => line.productId)),
+  ];
+  if (mode === "borrow" && emptiedProductIds.length > 0 && typeof data === "string") {
+    try {
+      await recordEmptyLevels(supabase, data, auth.member.id, emptiedProductIds);
+    } catch (err) {
+      console.error("Failed to record 'took the last of it' levels:", err);
+    }
   }
 
   // Best-effort text receipt over Telegram: the cart is already committed

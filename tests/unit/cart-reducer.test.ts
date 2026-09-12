@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   cartReducer,
   initialCartState,
+  mintClientToken,
   type CartProduct,
 } from "@/app/store/components/cartReducer";
 
@@ -19,6 +20,15 @@ const GM6020: CartProduct = {
   tier: "asset",
   unit: "unit",
 };
+
+const HEAT_SHRINK: CartProduct = {
+  id: "prod-heat-shrink",
+  name: "Heat shrink assorted",
+  tier: "loose",
+  unit: "lot",
+};
+
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 describe("cartReducer", () => {
   it("starts with a null destination and an empty cart", () => {
@@ -150,5 +160,102 @@ describe("cartReducer", () => {
     expect(next).not.toBe(prev);
     expect(next.lines).not.toBe(prev.lines);
     expect(prev.lines.size).toBe(0);
+  });
+});
+
+describe("cartReducer -- client idempotency token", () => {
+  it("mints a v4 UUID with the cart, and a different one per cart", () => {
+    const a = initialCartState();
+    const b = initialCartState();
+    expect(a.clientToken).toMatch(UUID_V4);
+    expect(b.clientToken).toMatch(UUID_V4);
+    expect(a.clientToken).not.toBe(b.clientToken);
+  });
+
+  it("mintClientToken produces a valid v4 UUID", () => {
+    expect(mintClientToken()).toMatch(UUID_V4);
+  });
+
+  it("survives every cart mutation -- a retry must re-send the same token", () => {
+    const initial = initialCartState();
+    const token = initial.clientToken;
+
+    let state = cartReducer(initial, {
+      type: "SET_DEST",
+      destHolderId: "hero-id",
+      destHolderName: "Hero",
+    });
+    state = cartReducer(state, { type: "ADD_ITEM", product: RESISTOR, qty: 10, entryMethod: "scan" });
+    state = cartReducer(state, { type: "ADD_ITEM", product: RESISTOR, qty: 5, entryMethod: "scan" });
+    state = cartReducer(state, { type: "SET_LINE_QTY", productId: RESISTOR.id, qty: 3 });
+    state = cartReducer(state, { type: "ADD_ITEM", product: GM6020, qty: 1, entryMethod: "search" });
+    state = cartReducer(state, { type: "REMOVE_LINE", productId: GM6020.id });
+    state = cartReducer(state, {
+      type: "CHANGE_DEST",
+      destHolderId: "sentry-id",
+      destHolderName: "Sentry",
+    });
+
+    expect(state.clientToken).toBe(token);
+  });
+
+  it("CLEAR mints a fresh token, so the next cart is a genuinely new write", () => {
+    const initial = initialCartState();
+    const token = initial.clientToken;
+
+    let state = cartReducer(initial, { type: "ADD_ITEM", product: RESISTOR, qty: 2, entryMethod: "scan" });
+    state = cartReducer(state, { type: "CLEAR" });
+
+    expect(state.clientToken).toMatch(UUID_V4);
+    expect(state.clientToken).not.toBe(token);
+  });
+});
+
+describe("cartReducer -- 'took the last of it' (loose tier)", () => {
+  it("does not set tookLast for an ordinary add", () => {
+    let state = initialCartState();
+    state = cartReducer(state, { type: "ADD_ITEM", product: HEAT_SHRINK, qty: 1, entryMethod: "scan" });
+    expect(state.lines.get(HEAT_SHRINK.id)?.tookLast).toBeUndefined();
+  });
+
+  it("carries tookLast onto the line", () => {
+    let state = initialCartState();
+    state = cartReducer(state, {
+      type: "ADD_ITEM",
+      product: HEAT_SHRINK,
+      qty: 1,
+      entryMethod: "scan",
+      tookLast: true,
+    });
+    expect(state.lines.get(HEAT_SHRINK.id)?.tookLast).toBe(true);
+  });
+
+  it("is sticky across a later plain add to the same line", () => {
+    let state = initialCartState();
+    state = cartReducer(state, {
+      type: "ADD_ITEM",
+      product: HEAT_SHRINK,
+      qty: 1,
+      entryMethod: "scan",
+      tookLast: true,
+    });
+    state = cartReducer(state, { type: "ADD_ITEM", product: HEAT_SHRINK, qty: 1, entryMethod: "scan" });
+
+    const line = state.lines.get(HEAT_SHRINK.id);
+    expect(line?.qty).toBe(2);
+    expect(line?.tookLast).toBe(true);
+  });
+
+  it("can be raised by a later add to an existing plain line", () => {
+    let state = initialCartState();
+    state = cartReducer(state, { type: "ADD_ITEM", product: HEAT_SHRINK, qty: 1, entryMethod: "scan" });
+    state = cartReducer(state, {
+      type: "ADD_ITEM",
+      product: HEAT_SHRINK,
+      qty: 1,
+      entryMethod: "scan",
+      tookLast: true,
+    });
+    expect(state.lines.get(HEAT_SHRINK.id)?.tookLast).toBe(true);
   });
 });

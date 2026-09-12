@@ -14,7 +14,9 @@ export interface QuantityPromptProduct {
 export interface QuantityPromptProps {
   open: boolean;
   product: QuantityPromptProduct | null;
-  onConfirm: (qty: number) => void;
+  /** `tookLast` is set only by the `loose` tier's "Took the last of it"
+   * button; every other path omits it. */
+  onConfirm: (qty: number, options?: { tookLast?: boolean }) => void;
   onClose: () => void;
 }
 
@@ -25,11 +27,12 @@ const BULK_CHIPS = [1, 2, 5, 10];
  * no prompt at all -- the caller adds qty=1 directly and never renders this
  * component. This component only ever handles `bulk` and `loose`.
  *
- * KNOWN SIMPLIFICATION: for `loose`, both "Took some" and "Took the last of
- * it" submit qty=1. The real "raise a restock flag" behavior for the latter
- * needs `min_stock` / notification wiring (Phase 5, out of this pass's
- * scope) since `stock_movements.qty` is `check (qty > 0)` and there's no
- * column to carry "level now empty" semantics yet.
+ * For `loose`, both buttons still submit qty=1 -- flows.md §4 is explicit
+ * that "loose items never get an exact count" -- but they are no longer the
+ * same action: "Took the last of it" additionally carries `tookLast`, which
+ * the submit route records as a level-is-now-empty count against the store
+ * (the restock flag flows.md §4 asks for). The quantity and the level are
+ * two different facts, which is why one button can't express both.
  */
 export default function QuantityPrompt({ open, product, onConfirm, onClose }: QuantityPromptProps) {
   const [typedQty, setTypedQty] = useState("");
@@ -41,9 +44,9 @@ export default function QuantityPrompt({ open, product, onConfirm, onClose }: Qu
     onClose();
   };
 
-  const handleConfirm = (qty: number) => {
+  const handleConfirm = (qty: number, options?: { tookLast?: boolean }) => {
     setTypedQty("");
-    onConfirm(qty);
+    onConfirm(qty, options);
   };
 
   const handleTypedSubmit = () => {
@@ -91,7 +94,11 @@ export default function QuantityPrompt({ open, product, onConfirm, onClose }: Qu
           <Button variant="secondary" onClick={() => handleConfirm(1)} className="w-full">
             Took some
           </Button>
-          <Button variant="secondary" onClick={() => handleConfirm(1)} className="w-full">
+          <Button
+            variant="secondary"
+            onClick={() => handleConfirm(1, { tookLast: true })}
+            className="w-full"
+          >
             Took the last of it
           </Button>
         </div>

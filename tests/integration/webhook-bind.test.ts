@@ -218,6 +218,70 @@ describe("POST /api/tg/webhook (WP10 identity binding)", () => {
     expect(data?.scan_code).toBe("SOMECODE123");
   });
 
+  it("(e) /starting is NOT /start: no bind, no bind-queue row (the old startsWith bug)", async () => {
+    const typoId = UNRECOGNIZED_FAKE_ID + 1;
+    const beforeCount = await countBindAttempts(typoId);
+
+    const res = await POST(
+      buildRequest(
+        buildUpdate({
+          fromId: typoId,
+          username: "definitely_not_a_club_member_xyz2",
+          firstName: "Typo",
+          text: "/starting",
+        }),
+        WEBHOOK_SECRET,
+      ),
+    );
+    expect(res.status).toBe(200);
+
+    // A typo'd command gets the plain-text fallback, not the binding flow --
+    // so nothing reached telegram_bind_attempts.
+    expect(await countBindAttempts(typoId)).toBe(beforeCount);
+  });
+
+  it("(f) /help and unrecognised text are answered, not silently dropped (flows.md §8)", async () => {
+    const chattyId = NO_WRITE_FAKE_ID + 2;
+
+    for (const text of ["/help", "/help@some_bot", "where is my motor", "hello"]) {
+      const res = await POST(
+        buildRequest(buildUpdate({ fromId: chattyId, firstName: "Chatty", text }), WEBHOOK_SECRET),
+      );
+      expect(res.status).toBe(200);
+    }
+
+    // None of these are DB writes.
+    expect(await countBindAttempts(chattyId)).toBe(0);
+  });
+
+  it("(g) /myitems from someone the bot can't resolve answers without writing anything", async () => {
+    const strangerId = UNRECOGNIZED_FAKE_ID + 2;
+
+    const res = await POST(
+      buildRequest(
+        buildUpdate({ fromId: strangerId, username: "nobody_zzz", text: "/myitems" }),
+        WEBHOOK_SECRET,
+      ),
+    );
+    expect(res.status).toBe(200);
+
+    // /myitems never queues a bind attempt -- only /start does.
+    expect(await countBindAttempts(strangerId)).toBe(0);
+  });
+
+  it("(h) a message with no text at all is acked silently", async () => {
+    const res = await POST(
+      buildRequest(
+        {
+          update_id: 1,
+          message: { message_id: 1, chat: { id: NO_WRITE_FAKE_ID + 3 }, from: { id: NO_WRITE_FAKE_ID + 3 } },
+        },
+        WEBHOOK_SECRET,
+      ),
+    );
+    expect(res.status).toBe(200);
+  });
+
   it("gracefully returns 200 even though sending the Telegram reply itself fails (fake chat id)", async () => {
     // Every case above sends chat_id = the fabricated from.id, which is not
     // a real Telegram chat -- Telegram's API genuinely rejects the

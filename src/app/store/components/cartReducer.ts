@@ -30,6 +30,14 @@ export interface CartLine {
   qty: number;
   scanCode?: string;
   entryMethod: EntryMethod;
+  /**
+   * `loose`-tier only: the member tapped "Took the last of it" rather than
+   * "Took some" (docs/tele-qr/flows.md §4 -- "loose items never get an exact
+   * count; 'took the last of it' sets the level to empty and raises a
+   * restock flag"). Both still submit qty=1; this is the level signal, which
+   * a count cannot carry.
+   */
+  tookLast?: boolean;
 }
 
 export interface CartState {
@@ -38,6 +46,19 @@ export interface CartState {
   destHolderName: string | null;
   /** Keyed by productId so duplicate adds can be found in O(1). */
   lines: Map<string, CartLine>;
+  /**
+   * Idempotency key for this cart, minted once when the cart is created and
+   * reused by every submit attempt until the cart is cleared.
+   *
+   * It lives in cart state, not in the submit function, precisely because a
+   * token minted per `fetch` would buy nothing: the case it exists for is a
+   * request that timed out on the wire but committed server-side, whose
+   * retry must carry the SAME token so `submit_cart` recognises the replay
+   * (supabase/migrations/0019_submit_cart_idempotent.sql) and returns the
+   * original session instead of writing every movement twice. CLEAR mints a
+   * fresh one, so the next cart is a genuinely new write.
+   */
+  clientToken: string;
 }
 
 export type CartAction =
@@ -47,6 +68,7 @@ export type CartAction =
       qty: number;
       scanCode?: string;
       entryMethod: EntryMethod;
+      tookLast?: boolean;
     }
   | { type: "SET_DEST"; destHolderId: string; destHolderName: string }
   /** Explicit member-initiated override of an already-set destination (the
@@ -58,12 +80,46 @@ export type CartAction =
   | { type: "REMOVE_LINE"; productId: string }
   | { type: "CLEAR" };
 
+/**
+ * A RFC-4122 v4 UUID, which is what `sessions.client_token` is typed as and
+ * what the submit route's zod schema validates.
+ *
+ * `crypto.randomUUID()` is the whole story inside Telegram (an HTTPS secure
+ * context) and under Node during SSR; the `getRandomValues` branch covers
+ * the older WebViews where `randomUUID` is missing but WebCrypto is not.
+ * There is deliberately no Math.random fallback: `sessions.client_token` is
+ * globally unique, so a weak token that collided with another member's would
+ * hand them back someone else's session id -- failing loudly at cart
+ * creation is far better than that.
+ */
+export function mintClientToken(): string {
+  const webCrypto = globalThis.crypto;
+  if (webCrypto?.randomUUID) return webCrypto.randomUUID();
+
+  if (webCrypto?.getRandomValues) {
+    const bytes = webCrypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10x
+    const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+    return [
+      hex.slice(0, 8),
+      hex.slice(8, 12),
+      hex.slice(12, 16),
+      hex.slice(16, 20),
+      hex.slice(20),
+    ].join("-");
+  }
+
+  throw new Error("No WebCrypto available to mint a cart idempotency token.");
+}
+
 export function initialCartState(): CartState {
   return {
     mode: "borrow",
     destHolderId: null,
     destHolderName: null,
     lines: new Map(),
+    clientToken: mintClientToken(),
   };
 }
 
@@ -78,13 +134,21 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
         // "maps onto the physical act of grabbing another one" (flows.md).
         // The original entryMethod/scanCode (from the first add) is kept,
         // since that's what identified the line for diagnostics.
-        lines.set(action.product.id, { ...existing, qty: existing.qty + action.qty });
+        // `tookLast` is sticky rather than last-write-wins: "took some, then
+        // came back and took the last of it" is one cart line that ends
+        // empty, and a later plain "took some" must not un-say it.
+        lines.set(action.product.id, {
+          ...existing,
+          qty: existing.qty + action.qty,
+          tookLast: existing.tookLast || action.tookLast || undefined,
+        });
       } else {
         lines.set(action.product.id, {
           product: action.product,
           qty: action.qty,
           scanCode: action.scanCode,
           entryMethod: action.entryMethod,
+          tookLast: action.tookLast || undefined,
         });
       }
       return { ...state, lines };

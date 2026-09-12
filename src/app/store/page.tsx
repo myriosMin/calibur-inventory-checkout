@@ -275,6 +275,14 @@ export default function StorePage() {
         <Button variant="secondary" onClick={() => router.push("/store/return")}>
           Return
         </Button>
+        {/* "my items" is part of the /store surface in
+            docs/tele-qr/architecture.md and is how docs/tele-qr/pdpa.md's
+            access-and-correction obligation is met -- de-emphasized because
+            it's a reference screen, not one of the two things a member came
+            here to do. */}
+        <Button variant="ghost" onClick={() => router.push("/store/mine")}>
+          My items
+        </Button>
       </div>
       <SearchSheet
         open={searchOpen}

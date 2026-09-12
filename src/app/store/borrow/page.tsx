@@ -286,7 +286,7 @@ export default function BorrowPage() {
     void loadDestinationOptions();
   };
 
-  const handleQuantityConfirm = (qty: number) => {
+  const handleQuantityConfirm = (qty: number, options?: { tookLast?: boolean }) => {
     if (!pendingIntake) return;
     dispatch({
       type: "ADD_ITEM",
@@ -294,6 +294,7 @@ export default function BorrowPage() {
       qty,
       scanCode: pendingIntake.scanCode,
       entryMethod: pendingIntake.entryMethod,
+      tookLast: options?.tookLast,
     });
     setPendingIntake(null);
     requestScanResume();
@@ -390,12 +391,23 @@ export default function BorrowPage() {
       qty: line.qty,
       scanCode: line.scanCode,
       entryMethod: line.entryMethod,
+      tookLast: line.tookLast,
     }));
     try {
       const res = await fetch("/api/store/cart/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Telegram-Init-Data": initData },
-        body: JSON.stringify({ mode: "borrow", destHolderId: state.destHolderId, lines }),
+        // `clientToken` is the cart's own idempotency key, minted once when
+        // the cart was created and unchanged across every retry below -- the
+        // Retry action and a double-tap of Done both re-send this exact
+        // token, which submit_cart dedups into one session rather than
+        // writing every movement twice.
+        body: JSON.stringify({
+          mode: "borrow",
+          destHolderId: state.destHolderId,
+          clientToken: state.clientToken,
+          lines,
+        }),
       });
       if (res.ok) {
         dispatch({ type: "CLEAR" });
@@ -422,7 +434,7 @@ export default function BorrowPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [state.lines, state.destHolderId, initData, router]);
+  }, [state.lines, state.destHolderId, state.clientToken, initData, router]);
 
   const handleCancel = () => {
     dispatch({ type: "CLEAR" });
