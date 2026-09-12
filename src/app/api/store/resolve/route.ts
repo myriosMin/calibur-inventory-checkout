@@ -28,6 +28,45 @@ function retired() {
   return NextResponse.json({ error: "retired" }, { status: 404 });
 }
 
+/**
+ * Why a resolve missed. The API deliberately returns ONE indistinguishable
+ * 404 for all four (the UI must not reveal "retired" vs "never existed");
+ * `scan_misses.outcome` is the private version and does not leak.
+ */
+type ScanMissOutcome =
+  | "unknown"
+  | "retired"
+  | "inactive_product"
+  | "missing_target";
+
+/**
+ * Records a failed resolve for /admin's "unknown or retired codes scanned"
+ * view (architecture.md's observability list).
+ *
+ * Two things here are load-bearing:
+ *  - It has its OWN try/catch. A logging failure must never turn a 404 into
+ *    a 500 -- the exact 404 body is part of this route's contract.
+ *  - Callers must `await` it. A Vercel function can be frozen the instant
+ *    the response is returned, so a floating insert is silently dropped.
+ *
+ * Writes through the service-role client, which bypasses RLS -- scan_misses
+ * deliberately has no INSERT policy (0023_scan_misses.sql).
+ */
+async function logMiss(
+  supabase: ReturnType<typeof getServiceRoleClient>,
+  code: string,
+  outcome: ScanMissOutcome,
+  memberId: string,
+): Promise<void> {
+  try {
+    await supabase
+      .from("scan_misses")
+      .insert({ code, outcome, member_id: memberId });
+  } catch {
+    // Swallowed on purpose: see above.
+  }
+}
+
 export async function POST(request: Request) {
   const auth = await requireMember(request);
   if (!auth.ok) {
@@ -59,11 +98,16 @@ export async function POST(request: Request) {
   // Unknown code, or a retired label: both return the same 404 shape so the
   // UI cannot distinguish "never existed" from "retired" (docs/tele-qr/flows.md).
   if (!scanCode || !scanCode.active) {
+    await logMiss(supabase, code, scanCode ? "retired" : "unknown", auth.member.id);
     return retired();
   }
 
   if (scanCode.kind === "product") {
-    if (!scanCode.product_id) return retired();
+    // Corrupt row: kind = 'product' with no product_id.
+    if (!scanCode.product_id) {
+      await logMiss(supabase, code, "missing_target", auth.member.id);
+      return retired();
+    }
 
     const { data: product, error: productError } = await supabase
       .from("products")
@@ -74,7 +118,10 @@ export async function POST(request: Request) {
 
     // A product deactivated after its code was printed is indistinguishable
     // from a retired/unknown code.
-    if (!product || !product.active) return retired();
+    if (!product || !product.active) {
+      await logMiss(supabase, code, "inactive_product", auth.member.id);
+      return retired();
+    }
 
     return NextResponse.json({
       kind: "product",
@@ -91,7 +138,11 @@ export async function POST(request: Request) {
   }
 
   if (scanCode.kind === "group") {
-    if (!scanCode.location_id) return retired();
+    // Corrupt row: kind = 'group' with no location_id.
+    if (!scanCode.location_id) {
+      await logMiss(supabase, code, "missing_target", auth.member.id);
+      return retired();
+    }
 
     const { data: location, error: locationError } = await supabase
       .from("locations")
@@ -99,7 +150,11 @@ export async function POST(request: Request) {
       .eq("id", scanCode.location_id)
       .maybeSingle();
     if (locationError) throw locationError;
-    if (!location) return retired();
+    // location_id points at a row that no longer exists.
+    if (!location) {
+      await logMiss(supabase, code, "missing_target", auth.member.id);
+      return retired();
+    }
 
     const { data: products, error: productsError } = await supabase
       .from("products")
@@ -132,5 +187,6 @@ export async function POST(request: Request) {
 
   // scan_codes.kind is constrained to 'product' | 'group' at the DB level;
   // anything else here means corrupt data, so treat it the same as retired.
+  await logMiss(supabase, code, "missing_target", auth.member.id);
   return retired();
 }

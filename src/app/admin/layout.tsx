@@ -12,7 +12,25 @@ const NAV_LINKS = [
   { href: "/admin/members", label: "Members" },
   { href: "/admin/scan-codes", label: "Scan codes" },
   { href: "/admin/bind-queue", label: "Bind queue" },
+  { href: "/admin/restock", label: "Restock" },
+  { href: "/admin/movements", label: "Movements" },
+  { href: "/admin/holdings", label: "Holdings" },
+  { href: "/admin/stocktake", label: "Stocktake" },
+  { href: "/admin/labels", label: "Labels" },
 ];
+
+/**
+ * Prefix match, so a detail route like /admin/movements/123 still highlights
+ * "Movements" -- the previous exact-equality check highlighted nothing there.
+ * "/admin" itself is special-cased to exact equality: as a prefix it matches
+ * every route in the section and would light up Dashboard permanently.
+ * The trailing-slash guard stops "/admin/holdings" from also matching
+ * "/admin/holders" style neighbours by bare string prefix.
+ */
+function isActive(pathname: string, href: string): boolean {
+  if (href === "/admin") return pathname === "/admin";
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -39,7 +57,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 key={link.href}
                 href={link.href}
                 className={`text-sm font-medium ${
-                  pathname === link.href
+                  isActive(pathname, link.href)
                     ? "text-red-400"
                     : "text-neutral-300 hover:text-neutral-100"
                 }`}

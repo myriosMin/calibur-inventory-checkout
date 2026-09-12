@@ -92,3 +92,43 @@ export function IconChevronRight(props: IconProps) {
     </svg>
   );
 }
+
+export function IconPrinter(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M7 9V4h10v5" />
+      <path d="M7 18H5.5A1.5 1.5 0 0 1 4 16.5v-5A1.5 1.5 0 0 1 5.5 10h13a1.5 1.5 0 0 1 1.5 1.5v5a1.5 1.5 0 0 1-1.5 1.5H17" />
+      <path d="M7 14h10v6H7z" />
+    </svg>
+  );
+}
+
+export function IconDownload(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12 4v11" />
+      <path d="m7.5 10.5 4.5 4.5 4.5-4.5" />
+      <path d="M4.5 19.5h15" />
+    </svg>
+  );
+}
+
+export function IconHistory(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1" />
+      <path d="M3.5 4.5V10H9" />
+      <path d="M12 7.5V12l3 1.8" />
+    </svg>
+  );
+}
+
+export function IconClipboard(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M9 4.5h6v2.5H9z" />
+      <path d="M15 6h1.5A1.5 1.5 0 0 1 18 7.5v11A1.5 1.5 0 0 1 16.5 20h-9A1.5 1.5 0 0 1 6 18.5v-11A1.5 1.5 0 0 1 7.5 6H9" />
+      <path d="M9.5 12h5M9.5 15.5h5" />
+    </svg>
+  );
+}

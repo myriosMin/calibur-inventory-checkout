@@ -1,6 +1,6 @@
-// Generated via mcp__supabase__generate_typescript_types against the
-// calibur-inventory Supabase project. Do not hand-edit; regenerate after
-// schema changes.
+// Generated via `supabase gen types typescript --linked --schema public`
+// against the calibur-inventory Supabase project. Do not hand-edit;
+// regenerate after schema changes.
 
 export type Json =
   | string
@@ -241,31 +241,72 @@ export type Database = {
           },
         ]
       }
+      scan_misses: {
+        Row: {
+          code: string
+          created_at: string
+          id: number
+          member_id: string | null
+          outcome: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          id?: number
+          member_id?: string | null
+          outcome: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          id?: number
+          member_id?: string | null
+          outcome?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scan_misses_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sessions: {
         Row: {
+          client_token: string | null
           committed_at: string | null
           dest_holder_id: string | null
           id: string
+          location_id: string | null
           member_id: string
           mode: string
+          note: string | null
           source: string
           started_at: string
         }
         Insert: {
+          client_token?: string | null
           committed_at?: string | null
           dest_holder_id?: string | null
           id?: string
+          location_id?: string | null
           member_id: string
           mode: string
+          note?: string | null
           source: string
           started_at?: string
         }
         Update: {
+          client_token?: string | null
           committed_at?: string | null
           dest_holder_id?: string | null
           id?: string
+          location_id?: string | null
           member_id?: string
           mode?: string
+          note?: string | null
           source?: string
           started_at?: string
         }
@@ -275,6 +316,13 @@ export type Database = {
             columns: ["dest_holder_id"]
             isOneToOne: false
             referencedRelation: "holders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sessions_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
             referencedColumns: ["id"]
           },
           {
@@ -292,30 +340,36 @@ export type Database = {
           counted_qty: number
           created_at: string
           expected_qty: number
+          holder_id: string
           id: string
+          movement_id: number | null
           note: string | null
           product_id: string
-          session_id: string | null
+          session_id: string
         }
         Insert: {
           counted_by?: string | null
           counted_qty: number
           created_at?: string
           expected_qty: number
+          holder_id: string
           id?: string
+          movement_id?: number | null
           note?: string | null
           product_id: string
-          session_id?: string | null
+          session_id: string
         }
         Update: {
           counted_by?: string | null
           counted_qty?: number
           created_at?: string
           expected_qty?: number
+          holder_id?: string
           id?: string
+          movement_id?: number | null
           note?: string | null
           product_id?: string
-          session_id?: string | null
+          session_id?: string
         }
         Relationships: [
           {
@@ -323,6 +377,20 @@ export type Database = {
             columns: ["counted_by"]
             isOneToOne: false
             referencedRelation: "members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_counts_holder_id_fkey"
+            columns: ["holder_id"]
+            isOneToOne: false
+            referencedRelation: "holders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_counts_movement_id_fkey"
+            columns: ["movement_id"]
+            isOneToOne: false
+            referencedRelation: "stock_movements"
             referencedColumns: ["id"]
           },
           {
@@ -358,6 +426,7 @@ export type Database = {
           product_id: string
           qty: number
           reason: string | null
+          reverses_movement_id: number | null
           scan_code: string | null
           session_id: string | null
           to_holder_id: string
@@ -371,6 +440,7 @@ export type Database = {
           product_id: string
           qty: number
           reason?: string | null
+          reverses_movement_id?: number | null
           scan_code?: string | null
           session_id?: string | null
           to_holder_id: string
@@ -384,6 +454,7 @@ export type Database = {
           product_id?: string
           qty?: number
           reason?: string | null
+          reverses_movement_id?: number | null
           scan_code?: string | null
           session_id?: string | null
           to_holder_id?: string
@@ -416,6 +487,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "stock_summary"
             referencedColumns: ["product_id"]
+          },
+          {
+            foreignKeyName: "stock_movements_reverses_movement_id_fkey"
+            columns: ["reverses_movement_id"]
+            isOneToOne: false
+            referencedRelation: "stock_movements"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "stock_movements_session_id_fkey"
@@ -483,20 +561,62 @@ export type Database = {
       }
       stock_summary: {
         Row: {
+          location_id: string | null
           min_stock: number | null
           name: string | null
           product_id: string | null
+          qty_consumed: number | null
           qty_in_store: number | null
           qty_out: number | null
           tier: string | null
+          unit: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "products_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Functions: {
+      admin_actor_member_id: { Args: { p_fallback: string }; Returns: string }
+      admin_commit_stocktake: {
+        Args: {
+          p_actor_member_id?: string
+          p_client_token?: string
+          p_counts: Json
+          p_holder_id?: string
+          p_location_id?: string
+          p_note?: string
+        }
+        Returns: string
+      }
+      admin_restock: {
+        Args: {
+          p_actor_member_id?: string
+          p_client_token?: string
+          p_lines: Json
+          p_note?: string
+        }
+        Returns: string
+      }
+      admin_reverse_movement: {
+        Args: {
+          p_actor_member_id?: string
+          p_client_token?: string
+          p_movement_id: number
+          p_note?: string
+        }
+        Returns: number
+      }
       is_admin: { Args: never; Returns: boolean }
       submit_cart: {
         Args: {
+          p_client_token?: string
           p_dest_holder_id: string
           p_lines: Json
           p_member_id: string
