@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 import Button from "@/components/ui/Button";
 import Toast from "@/components/ui/Toast";
-import { generateScanCode } from "@/lib/codes/generate";
+import { insertScanCodeWithRetry } from "@/lib/codes/insert";
 import { getBrowserClient } from "@/lib/supabase/browser";
-import type { Tables, TablesInsert } from "@/lib/types/database";
+import type { Tables } from "@/lib/types/database";
 
 type ScanCode = Tables<"scan_codes">;
 type ProductOption = Pick<Tables<"products">, "id" | "name" | "tier" | "active">;
@@ -14,49 +15,9 @@ type LocationOption = Pick<Tables<"locations">, "id" | "name">;
 
 type Kind = "product" | "group";
 
-/** PostgREST/Postgres error code for a unique-constraint violation. */
-const UNIQUE_VIOLATION = "23505";
-const MAX_CODE_ATTEMPTS = 5;
-
 interface FeedbackState {
   variant: "success" | "error" | "info";
   message: string;
-}
-
-/**
- * Inserts a new scan_codes row, generating a fresh code client-side each
- * attempt. `code` is the table's primary key, so a collision surfaces as a
- * unique-violation on insert -- astronomically unlikely at 7 chars, but the
- * plan requires handling it gracefully rather than assuming it can't happen.
- */
-async function insertScanCodeWithRetry(
-  supabase: ReturnType<typeof getBrowserClient>,
-  payload: Omit<TablesInsert<"scan_codes">, "code">,
-): Promise<ScanCode> {
-  let lastError: { message: string; code?: string } | null = null;
-
-  for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt++) {
-    const code = generateScanCode();
-    const { data, error } = await supabase
-      .from("scan_codes")
-      .insert({ ...payload, code })
-      .select("*")
-      .single();
-
-    if (!error) return data;
-
-    lastError = error;
-    if (error.code !== UNIQUE_VIOLATION) {
-      // Any other error (e.g. the code_target CHECK constraint) won't be
-      // fixed by retrying with a different code -- fail immediately.
-      throw error;
-    }
-    // Unique violation on `code`: loop and try a freshly generated one.
-  }
-
-  throw new Error(
-    `Could not generate a unique scan code after ${MAX_CODE_ATTEMPTS} attempts: ${lastError?.message ?? "unknown error"}`,
-  );
 }
 
 export default function AdminScanCodesPage() {
@@ -414,6 +375,17 @@ export default function AdminScanCodesPage() {
                     <td className="px-4 py-2">
                       {row.active ? (
                         <div className="flex gap-2">
+                          {/* Reprint hands off to /admin/labels, which owns
+                              the QR rendering and the sticker-sheet print
+                              CSS -- a single sticker is just a batch of one,
+                              and duplicating the geometry here is how the
+                              two would drift apart. */}
+                          <Link
+                            href={`/admin/labels?code=${encodeURIComponent(row.code)}`}
+                            className="inline-flex min-h-0 items-center justify-center rounded-lg bg-neutral-800 px-2 py-1 text-xs font-medium uppercase tracking-wide text-neutral-100 transition-colors hover:bg-neutral-700"
+                          >
+                            Print label
+                          </Link>
                           <Button
                             variant="secondary"
                             className="min-h-0 px-2 py-1 text-xs"
