@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import Button from "@/components/ui/Button";
 import Toast from "@/components/ui/Toast";
 import { getWebApp } from "@/lib/telegram/webapp-client";
+import { mintClientToken } from "@/app/store/components/cartReducer";
 import type { SearchProduct } from "@/app/store/components/SearchSheet";
+import { buildReturnLines, buildReturnSubmitBody } from "@/app/store/return/submit";
 import ReturnChecklist, {
   type ExtraLine,
   type HoldingItem,
@@ -46,6 +48,19 @@ export default function ReturnPage() {
   const [quantities, setQuantities] = useState<Record<string, number>>({});
 
   const [submitting, setSubmitting] = useState(false);
+
+  /**
+   * Idempotency key for THIS return walk -- one token, not one per request.
+   * A token minted per `fetch` would buy nothing: the case it exists for is
+   * a request that timed out on the wire but committed server-side, whose
+   * retry (the Retry action on the error toast, or a double-tap of Done)
+   * must carry the SAME token so `submit_cart` recognises the replay and
+   * returns the original session instead of writing every return movement
+   * twice. Minted lazily on the first submit, cleared on success so the next
+   * walk is a genuinely new write, and reset whenever the member starts over
+   * from a different source.
+   */
+  const clientTokenRef = useRef<string | null>(null);
   const [toast, setToast] = useState<
     { variant: "success" | "error"; message: string } | null
   >(null);
@@ -64,6 +79,7 @@ export default function ReturnPage() {
   // still read as "" and send an unauthenticated request.
   const pickSource = (source: SourceHolder, sources: SourceHolder[], initDataOverride?: string) => {
     setStage({ name: "loading-holdings", sources, source });
+    clientTokenRef.current = null;
     setItems([]);
     setExtraLines([]);
     setQuantities({});
@@ -174,20 +190,7 @@ export default function ReturnPage() {
     setQuantities((prev) => ({ ...prev, [product.id]: 1 }));
   };
 
-  const buildLines = () =>
-    Object.entries(quantities)
-      .filter(([, qty]) => qty > 0)
-      .map(([productId, qty]) => ({
-        productId,
-        qty,
-        // WP14's `entryMethod` enum ('scan' | 'group_pick' | 'search') has no
-        // dedicated value for "tapped a stepper on the return checklist" --
-        // it isn't scan-sourced at all. 'search' is the closest fit: like a
-        // search-added line, a checklist line is a member-initiated pick
-        // from a browsable list rather than a code resolution. This applies
-        // uniformly to both held-item rows and search-fallback extra rows.
-        entryMethod: "search" as const,
-      }));
+  const buildLines = () => buildReturnLines(quantities);
 
   const isSubmittable = stage.name === "checklist" && buildLines().length > 0;
 
@@ -195,6 +198,17 @@ export default function ReturnPage() {
     if (stage.name !== "checklist") return;
     const lines = buildLines();
     if (lines.length === 0) return;
+
+    if (!clientTokenRef.current) {
+      try {
+        clientTokenRef.current = mintClientToken();
+      } catch {
+        // No WebCrypto at all (an ancient WebView). Submitting without a
+        // token is exactly the pre-0019 behaviour, which is a far better
+        // answer than refusing to let the member return anything.
+        clientTokenRef.current = null;
+      }
+    }
 
     setSubmitting(true);
     setToast(null);
@@ -205,14 +219,19 @@ export default function ReturnPage() {
         "Content-Type": "application/json",
         "X-Telegram-Init-Data": initData,
       },
-      body: JSON.stringify({
-        mode: "return",
-        sourceHolderId: stage.source.id,
-        lines,
-      }),
+      body: JSON.stringify(
+        buildReturnSubmitBody({
+          sourceHolderId: stage.source.id,
+          quantities,
+          clientToken: clientTokenRef.current,
+        }),
+      ),
     })
       .then((res) => {
         if (!res.ok) throw new Error(`submit_failed_${res.status}`);
+        // Walk is done: the next one must not reuse this token, or
+        // submit_cart would hand back this session instead of writing.
+        clientTokenRef.current = null;
         setToast({ variant: "success", message: "Returned. Thanks!" });
         // Brief delay so the success toast is actually visible before the
         // navigation away from this page unmounts it.

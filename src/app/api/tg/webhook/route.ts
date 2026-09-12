@@ -8,7 +8,7 @@ import {
   buildHelpText,
   buildMyItemsText,
   buildUnknownMemberText,
-  parseCommand,
+  routeMessage,
 } from "@/lib/telegram/commands";
 import type { TelegramMessage, TelegramUpdate } from "@/lib/telegram/types";
 import { isValidWebhookSecret } from "@/lib/telegram/webhook-verify";
@@ -57,20 +57,36 @@ export async function POST(request: Request) {
     return ack();
   }
 
-  const parsed = parseCommand(text);
+  // Where the message came from decides whether we may speak at all. The
+  // alert-chat feature puts this bot IN the club group, so a group message
+  // that was not explicitly addressed to it (`/cmd@this_bot`) is answered
+  // with silence -- see routeMessage for the full rules.
+  const route = routeMessage(
+    text,
+    message.chat.type,
+    process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME,
+  );
 
-  switch (parsed?.command) {
+  if (route.action === "ignore") return ack();
+
+  if (route.action === "fallback") {
+    // Private chat only. Plain text, or a command this bot doesn't have.
+    // flows.md §8's "Mini App won't load -> bot replies with a plain-text
+    // fallback".
+    await sendMessageSafely(message.chat.id, buildFallbackText());
+    return ack();
+  }
+
+  switch (route.command) {
     case "/start":
-      return handleStart(message, parsed.args);
+      return handleStart(message, route.args);
     case "/myitems":
       return handleMyItems(message);
     case "/help":
       await sendMessageSafely(message.chat.id, buildHelpText());
       return ack();
     default:
-      // Plain text, or a command this bot doesn't have. flows.md §8's
-      // "Mini App won't load -> bot replies with a plain-text fallback".
-      await sendMessageSafely(message.chat.id, buildFallbackText());
+      // Unreachable: routeMessage only ever hands back a known BotCommand.
       return ack();
   }
 }

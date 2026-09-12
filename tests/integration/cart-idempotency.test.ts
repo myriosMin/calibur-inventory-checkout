@@ -330,4 +330,51 @@ describe("POST /api/store/cart/submit -- idempotency + 'took the last of it'", (
     if (error) throw error;
     expect(count).toBe(0);
   });
+
+  it("a RETURN replayed with the same token writes one set of movements", async () => {
+    // The return walk has its own Stage machine (it does not use
+    // cartReducer), and shipped WITHOUT sending a clientToken at all -- so
+    // its own Retry button re-wrote every return movement. This is the
+    // server half of that fix: the same token twice is one session.
+    const borrowToken = randomUUID();
+    const borrow = await submit({
+      mode: "borrow",
+      destHolderId: robotHolderId,
+      clientToken: borrowToken,
+      lines: [{ productId: assetProductId, qty: 1, entryMethod: "scan" as const }],
+    });
+    expect(borrow.status).toBe(200);
+    const { sessionId: borrowSessionId } = await borrow.json();
+    createdSessionIds.push(borrowSessionId);
+
+    const returnToken = randomUUID();
+    const returnBody = {
+      mode: "return",
+      sourceHolderId: robotHolderId,
+      clientToken: returnToken,
+      // Exactly what buildReturnSubmitBody produces for a checklist row.
+      lines: [{ productId: assetProductId, qty: 1, entryMethod: "search" as const }],
+    };
+
+    const first = await submit(returnBody);
+    expect(first.status).toBe(200);
+    const firstJson = await first.json();
+    createdSessionIds.push(firstJson.sessionId);
+    expect(await countMovementsForSession(firstJson.sessionId)).toBe(1);
+
+    // The Retry-after-timeout replay.
+    const second = await submit(returnBody);
+    expect(second.status).toBe(200);
+    const secondJson = await second.json();
+
+    expect(secondJson.sessionId).toBe(firstJson.sessionId);
+    expect(await countMovementsForSession(firstJson.sessionId)).toBe(1);
+
+    const { count: sessionCount, error } = await db
+      .from("sessions")
+      .select("*", { count: "exact", head: true })
+      .eq("client_token", returnToken);
+    if (error) throw error;
+    expect(sessionCount).toBe(1);
+  });
 });

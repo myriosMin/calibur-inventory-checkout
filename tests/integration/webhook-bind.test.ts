@@ -57,12 +57,17 @@ function buildUpdate(opts: {
   firstName?: string;
   lastName?: string;
   text: string;
+  /** Telegram's `chat.type`. Defaults to a DM, which is every case below
+   *  except the group-chat suite at the end of the file. */
+  chatType?: string;
+  /** Group updates carry a chat id of their own, not the sender's. */
+  chatId?: number;
 }) {
   return {
     update_id: Math.floor(Math.random() * 1_000_000_000),
     message: {
       message_id: 1,
-      chat: { id: opts.fromId },
+      chat: { id: opts.chatId ?? opts.fromId, type: opts.chatType ?? "private" },
       from: {
         id: opts.fromId,
         username: opts.username,
@@ -301,5 +306,88 @@ describe("POST /api/tg/webhook (WP10 identity binding)", () => {
 
     // Clean up this one too.
     await db.from("telegram_bind_attempts").delete().eq("telegram_user_id", fakeId);
+  });
+  // -------------------------------------------------------------------------
+  // Group chats. The alert-chat feature (the cron posting low-stock and the
+  // weekly digest) requires this bot to JOIN the club group, at which point
+  // every stray "/todo" from any of ~120 members used to get a public "I
+  // didn't understand that", and any "/start" ran identity binding and
+  // announced the result to the whole chat.
+  //
+  // The fabricated negative chat id below is what Telegram group ids look
+  // like; a reply attempt to it would fail at the API anyway, so the real
+  // assertion here is the DB one -- nothing is written, i.e. the binding
+  // flow never ran.
+  // -------------------------------------------------------------------------
+  const GROUP_CHAT_ID = -100_900_000_000 - RUN_NONCE;
+  const BOT_USERNAME = (process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "").replace(/^@/, "");
+
+  it("(h) ignores an unaddressed /start in a group -- no binding, no bind-queue row", async () => {
+    const groupieId = NO_WRITE_FAKE_ID + 4;
+    expect(await countBindAttempts(groupieId)).toBe(0);
+
+    const res = await POST(
+      buildRequest(
+        buildUpdate({
+          fromId: groupieId,
+          chatId: GROUP_CHAT_ID,
+          chatType: "supergroup",
+          username: "definitely_not_a_club_member_grp",
+          firstName: "Group",
+          text: "/start",
+        }),
+        WEBHOOK_SECRET,
+      ),
+    );
+    expect(res.status).toBe(200);
+
+    // The binding flow never ran: nothing was queued for an admin to resolve.
+    expect(await countBindAttempts(groupieId)).toBe(0);
+  });
+
+  it("(i) ignores group chatter and other bots' commands without writing anything", async () => {
+    const groupieId = NO_WRITE_FAKE_ID + 5;
+
+    for (const text of ["lunch at 12?", "/todo", "/start@some_other_bot", "/help@some_other_bot"]) {
+      const res = await POST(
+        buildRequest(
+          buildUpdate({
+            fromId: groupieId,
+            chatId: GROUP_CHAT_ID,
+            chatType: "group",
+            firstName: "Chatty",
+            text,
+          }),
+          WEBHOOK_SECRET,
+        ),
+      );
+      expect(res.status).toBe(200);
+    }
+
+    expect(await countBindAttempts(groupieId)).toBe(0);
+  });
+
+  it("(j) still answers a command addressed to this bot by name in a group", async () => {
+    // Skipped rather than guessed when the env var is unset: the whole point
+    // is matching the REAL configured username.
+    if (!BOT_USERNAME) return;
+
+    const strangerId = NO_WRITE_FAKE_ID + 6;
+    const res = await POST(
+      buildRequest(
+        buildUpdate({
+          fromId: strangerId,
+          chatId: GROUP_CHAT_ID,
+          chatType: "supergroup",
+          firstName: "Curious",
+          text: `/myitems@${BOT_USERNAME}`,
+        }),
+        WEBHOOK_SECRET,
+      ),
+    );
+    // The reply itself fails at Telegram (fabricated group id) and is
+    // swallowed, exactly like every other case in this file.
+    expect(res.status).toBe(200);
+    expect(await countBindAttempts(strangerId)).toBe(0);
   });
 });

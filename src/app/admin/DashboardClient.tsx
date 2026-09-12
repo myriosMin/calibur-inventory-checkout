@@ -276,6 +276,12 @@ export default function DashboardClient() {
           name: product.name,
           tier: product.tier,
           active: product.active,
+          // Required for group-label coverage: a product on a shelf with an
+          // active `kind='group'` sticker IS labelled, even with no product
+          // code of its own (the resistor book is one sticker for ~157
+          // products). Without this the whole book reads as "no active
+          // label".
+          locationId: product.locationId,
         })),
         codes,
       ),
@@ -469,14 +475,19 @@ export default function DashboardClient() {
       key: "action",
       header: "",
       className: "text-right",
-      render: (row) => (
-        <Link
-          href={row.code ? `/admin/labels?code=${encodeURIComponent(row.code)}` : "/admin/scan-codes"}
-          className="font-medium text-red-400 hover:text-red-300"
-        >
-          {row.code ? "Reprint label" : "Create a code"}
-        </Link>
-      ),
+      render: (row) => {
+        // A product with no code of its own may still be reachable through
+        // the group sticker on its shelf -- that one is what gets reprinted.
+        const printable = row.code ?? row.groupCode;
+        return (
+          <Link
+            href={printable ? `/admin/labels?code=${encodeURIComponent(printable)}` : "/admin/scan-codes"}
+            className="font-medium text-red-400 hover:text-red-300"
+          >
+            {row.code ? "Reprint label" : row.groupCode ? "Reprint group label" : "Create a code"}
+          </Link>
+        );
+      },
     },
   ];
 

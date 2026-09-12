@@ -35,6 +35,28 @@ export type ReportClient = SupabaseClient<Database>;
  */
 export const REPORT_ROW_LIMIT = 20000;
 
+/**
+ * "Did this query come back truncated?", as a sentence an admin can act on.
+ *
+ * PostgREST caps an unbounded select at 1000 rows and says nothing about it,
+ * which on a stock page is worse than a slow page: the numbers are simply
+ * wrong and look right. Every read that can grow with the catalog therefore
+ * asks for an explicit `REPORT_ROW_LIMIT`, and a result that comes back AT
+ * the limit is assumed to have more behind it — one wasted sentence when the
+ * count lands exactly on the limit, versus silently hiding stock otherwise.
+ *
+ * Returns null when there is nothing to say, so a caller can render it
+ * conditionally without a second predicate.
+ */
+export function truncationNotice(
+  what: string,
+  rowCount: number,
+  limit: number = REPORT_ROW_LIMIT,
+): string | null {
+  if (rowCount < limit) return null;
+  return `Showing the first ${limit} ${what}. There are more, and they are not on this page — narrow the filters or export the full data instead.`;
+}
+
 function unwrap<T>(result: { data: T[] | null; error: { message: string } | null }, what: string): T[] {
   if (result.error) throw new Error(`${what}: ${result.error.message}`);
   return result.data ?? [];

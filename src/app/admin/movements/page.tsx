@@ -9,6 +9,7 @@ import StatusPill from "@/components/admin/StatusPill";
 import Button from "@/components/ui/Button";
 import Toast from "@/components/ui/Toast";
 import { getBrowserClient } from "@/lib/supabase/browser";
+import { createRequestSequencer } from "@/lib/utils/latest-request";
 
 import {
   EMPTY_MOVEMENT_FILTERS,
@@ -114,9 +115,19 @@ export default function AdminMovementsPage() {
    *  retried without risking a second mirror row. Keyed by movement id. */
   const reversalTokens = useRef<Map<number, string>>(new Map());
 
+  /** Request-ordering guard for loadMovements -- see latest-request.ts. The
+   *  effect's `cancelled` flag cannot help here: it only fires on teardown,
+   *  so two overlapping filter changes could still land out of order and
+   *  paint stale rows under a newer filter. */
+  const sequencer = useRef(createRequestSequencer());
+
   const loadMovements = useCallback(async () => {
+    const ticket = sequencer.current.start();
     setLoading(true);
     setLoadError(null);
+    // Never carry the previous page's reversal marks into this one: they are
+    // keyed by movement id and nothing below clears them on a failed lookup.
+    setReversedIds(new Set());
 
     const plan = buildMovementQueryPlan(filters);
     let query = supabase
@@ -138,6 +149,7 @@ export default function AdminMovementsPage() {
     // is a full scan that gets more expensive every month.
     const from = page * PAGE_SIZE;
     const { data, error } = await query.range(from, from + PAGE_SIZE);
+    if (!sequencer.current.isCurrent(ticket)) return; // superseded mid-flight
 
     if (error) {
       setLoadError(error.message);
@@ -164,6 +176,7 @@ export default function AdminMovementsPage() {
           "reverses_movement_id",
           pageRows.map((row) => row.id),
         );
+      if (!sequencer.current.isCurrent(ticket)) return;
       if (!reversalErr) {
         setReversedIds(
           new Set(
@@ -173,8 +186,10 @@ export default function AdminMovementsPage() {
           ),
         );
       }
-    } else {
-      setReversedIds(new Set());
+      // On an error the set stays empty (cleared above) rather than keeping
+      // another page's ids: an unmarked reversed row offers a reversal that
+      // the RPC will refuse, which is recoverable; a wrongly-marked row hides
+      // a correction someone needs to make.
     }
 
     setLoading(false);

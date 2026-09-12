@@ -120,15 +120,117 @@ describe("computeLabelHealth thresholds", () => {
     expect(rows[0].verdict).toBe("insufficient_data");
   });
 
-  it("ignores a group code when deciding whether a product has its own label", () => {
-    // A group code resolves to a location and offers a list; it is not the
-    // product's own sticker, and reprinting it is a different job.
+  it("ignores a group code somewhere else entirely", () => {
+    // A group code resolves to a LOCATION. One on a different shelf (or on
+    // no shelf at all) says nothing about this product.
     const rows = computeLabelHealth(
       entries("p-unlabelled", "search", 5),
-      [products[2]],
-      [{ code: "GRP111", productId: null, kind: "group", active: true }],
+      [{ ...products[2], locationId: "loc-shelf-a" }],
+      [
+        { code: "GRP111", productId: null, kind: "group", active: true, locationId: "loc-shelf-b" },
+        { code: "GRP222", productId: null, kind: "group", active: true, locationId: null },
+      ],
     );
     expect(rows[0].verdict).toBe("no_label");
+  });
+
+  // -------------------------------------------------------------------------
+  // Group-label coverage. This is the resistor book: ONE sticker on a
+  // location, resolving to ~157 products that deliberately have no code of
+  // their own. Counting those as "no active label" pointed the dashboard's
+  // loudest signal at the arrangement working exactly as designed.
+  // -------------------------------------------------------------------------
+  it("counts a product covered by an active group code at its location as labelled", () => {
+    const rows = computeLabelHealth(
+      entries("p-unlabelled", "group_pick", 5),
+      [{ ...products[2], locationId: "loc-resistor-book" }],
+      [
+        {
+          code: "GRP111",
+          productId: null,
+          kind: "group",
+          active: true,
+          locationId: "loc-resistor-book",
+        },
+      ],
+    );
+    expect(rows[0].hasActiveCode).toBe(true);
+    expect(rows[0].groupCode).toBe("GRP111");
+    expect(rows[0].verdict).toBe("ok");
+  });
+
+  it("still flags a group-labelled product people cannot scan", () => {
+    // The group sticker exists but is not working: every entry is a search.
+    // That is `suspect` (reprint the group label), not `no_label`.
+    const rows = computeLabelHealth(
+      entries("p-unlabelled", "search", 5),
+      [{ ...products[2], locationId: "loc-resistor-book" }],
+      [
+        {
+          code: "GRP111",
+          productId: null,
+          kind: "group",
+          active: true,
+          locationId: "loc-resistor-book",
+        },
+      ],
+    );
+    expect(rows[0].verdict).toBe("suspect");
+    expect(rows[0].groupCode).toBe("GRP111");
+  });
+
+  it("does not count a RETIRED group code as coverage", () => {
+    const rows = computeLabelHealth(
+      entries("p-unlabelled", "search", 5),
+      [{ ...products[2], locationId: "loc-resistor-book" }],
+      [
+        {
+          code: "GRP111",
+          productId: null,
+          kind: "group",
+          active: false,
+          locationId: "loc-resistor-book",
+        },
+      ],
+    );
+    expect(rows[0].verdict).toBe("no_label");
+    expect(rows[0].groupCode).toBeNull();
+  });
+
+  it("leaves a product with no location uncovered", () => {
+    const rows = computeLabelHealth(
+      entries("p-unlabelled", "search", 5),
+      [{ ...products[2], locationId: null }],
+      [
+        {
+          code: "GRP111",
+          productId: null,
+          kind: "group",
+          active: true,
+          locationId: "loc-resistor-book",
+        },
+      ],
+    );
+    expect(rows[0].verdict).toBe("no_label");
+  });
+
+  it("prefers the product's own code over the group one when both exist", () => {
+    const rows = computeLabelHealth(
+      entries("p-scanned", "search", 5),
+      [{ ...products[0], locationId: "loc-resistor-book" }],
+      [
+        codes[0],
+        {
+          code: "GRP111",
+          productId: null,
+          kind: "group",
+          active: true,
+          locationId: "loc-resistor-book",
+        },
+      ],
+    );
+    expect(rows[0].code).toBe("AAA111");
+    expect(rows[0].groupCode).toBe("GRP111");
   });
 });
 

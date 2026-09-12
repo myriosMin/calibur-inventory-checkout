@@ -38,11 +38,18 @@ export async function sendMessage(chatId: number, text: string): Promise<void> {
  * of whether the outbound Telegram message lands, so a Telegram-side error
  * (fabricated/unreachable chat id, transient API failure) must never fail
  * the caller's own request.
+ *
+ * Returns whether the message actually went out. Most callers ignore it and
+ * should; the cron does not, because "the digest was sent" appearing in a
+ * healthy-looking cron response while Telegram rejected every message is how
+ * a scheduled job stops working without anyone noticing.
  */
-export async function sendMessageSafely(chatId: number, text: string): Promise<void> {
+export async function sendMessageSafely(chatId: number, text: string): Promise<boolean> {
   try {
     await sendMessage(chatId, text);
+    return true;
   } catch (error) {
     console.error("[telegram] Failed to send message:", error);
+    return false;
   }
 }

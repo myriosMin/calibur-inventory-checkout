@@ -4,8 +4,10 @@ import {
   buildLowStockAlertText,
   buildNegativeStockAlertText,
   buildOverdueNudgeText,
+  buildWeeklyDigestMessages,
   buildWeeklyDigestText,
   formatDays,
+  TELEGRAM_MESSAGE_LIMIT,
   formatDuration,
 } from "@/lib/reports/messages";
 
@@ -199,5 +201,135 @@ describe("buildWeeklyDigestText", () => {
       sectionLimit: 15,
     });
     expect(many.length).toBeLessThan(4096);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The digest has to FIT. `sectionLimit` bounds the number of lines, not their
+// length: four sections of 15 real-length part names pass Telegram's 4096
+// characters, the send 400s, sendMessageSafely swallows it, and the cron
+// still reports the digest as sent -- so it stops arriving and nothing looks
+// wrong. buildWeeklyDigestMessages is what makes that impossible.
+// ---------------------------------------------------------------------------
+
+const LONG_NAME = "DJI M3508 P19 brushless motor with C620 electronic speed controller";
+
+function hugeDigestParams(sectionLimit = 15) {
+  return {
+    date: "2026-09-14",
+    outstanding: Array.from({ length: 40 }, (_, i) => ({
+      name: `${LONG_NAME} rev ${i}`,
+      qtyOut: 2,
+      unit: "pcs",
+    })),
+    lowStock: Array.from({ length: 40 }, (_, i) => ({
+      name: `${LONG_NAME} spare ${i}`,
+      qtyInStore: 1,
+      minStock: 10,
+      unit: "pcs",
+    })),
+    negative: Array.from({ length: 40 }, (_, i) => ({
+      name: `${LONG_NAME} variant ${i}`,
+      qtyInStore: -3,
+      unit: "pcs",
+    })),
+    overdue: Array.from({ length: 40 }, (_, i) => ({
+      memberName: `Member With A Fairly Long Name ${i}`,
+      productName: `${LONG_NAME} unit ${i}`,
+      qty: 1,
+      unit: "pcs",
+      daysOut: 30 + i,
+    })),
+    sectionLimit,
+  };
+}
+
+describe("buildWeeklyDigestMessages", () => {
+  it("proves the single-string builder really can overflow", () => {
+    // The bug, stated as a test: this is what used to be handed to Telegram.
+    expect(buildWeeklyDigestText(hugeDigestParams()).length).toBeGreaterThan(
+      TELEGRAM_MESSAGE_LIMIT,
+    );
+  });
+
+  it("keeps every message inside Telegram's limit", () => {
+    const messages = buildWeeklyDigestMessages(hugeDigestParams());
+    expect(messages.length).toBeGreaterThan(1);
+    for (const message of messages) {
+      expect(message.length).toBeLessThanOrEqual(TELEGRAM_MESSAGE_LIMIT);
+    }
+  });
+
+  it("numbers the parts and dates every one of them", () => {
+    const messages = buildWeeklyDigestMessages(hugeDigestParams());
+    messages.forEach((message, index) => {
+      expect(message).toContain(
+        `Weekly inventory digest — 2026-09-14 (${index + 1}/${messages.length})`,
+      );
+    });
+  });
+
+  it("sends the ordinary digest as exactly one unnumbered message", () => {
+    const messages = buildWeeklyDigestMessages({
+      date: "2026-09-14",
+      outstanding: [{ name: "M3508", qtyOut: 2, unit: "pcs" }],
+      lowStock: [{ name: "XT60 male", qtyInStore: 4, minStock: 10, unit: "pcs" }],
+      negative: [],
+      overdue: [],
+      sectionLimit: 15,
+    });
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toBe(
+      buildWeeklyDigestText({
+        date: "2026-09-14",
+        outstanding: [{ name: "M3508", qtyOut: 2, unit: "pcs" }],
+        lowStock: [{ name: "XT60 male", qtyInStore: 4, minStock: 10, unit: "pcs" }],
+        negative: [],
+        overdue: [],
+        sectionLimit: 15,
+      }),
+    );
+  });
+
+  it("still sends the quiet digest -- that is how the club knows the job runs", () => {
+    const messages = buildWeeklyDigestMessages({
+      date: "2026-09-14",
+      outstanding: [],
+      lowStock: [],
+      negative: [],
+      overdue: [],
+      sectionLimit: 15,
+    });
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain("Out of the store: none");
+  });
+
+  it("shrinks a single oversized section rather than dropping it, and says how much", () => {
+    // One section, far too big for any message on its own: it must come back
+    // truncated with an honest count, not silently cut or omitted.
+    const messages = buildWeeklyDigestMessages({
+      date: "2026-09-14",
+      outstanding: Array.from({ length: 100 }, (_, i) => ({
+        name: `${LONG_NAME} rev ${i}`,
+        qtyOut: 2,
+        unit: "pcs",
+      })),
+      lowStock: [],
+      negative: [],
+      overdue: [],
+      // No per-section cap worth speaking of: the message limit is the only
+      // thing standing between this and a 400 from Telegram.
+      sectionLimit: 500,
+    });
+    expect(messages).toHaveLength(1);
+    expect(messages[0].length).toBeLessThanOrEqual(TELEGRAM_MESSAGE_LIMIT);
+    expect(messages[0]).toContain("Out of the store (100):");
+    expect(messages[0]).toMatch(/- and \d+ more/);
+  });
+
+  it("carries no emoji, in any part", () => {
+    for (const message of buildWeeklyDigestMessages(hugeDigestParams())) {
+      expect(EMOJI.test(message)).toBe(false);
+    }
   });
 });

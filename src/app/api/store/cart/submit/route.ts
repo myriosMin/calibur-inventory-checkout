@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { isReplayCommit } from "@/lib/server/cart-replay";
 import { requireMember } from "@/lib/server/member-auth";
 import { getServiceRoleClient } from "@/lib/supabase/server";
 import { sendMessageSafely } from "@/lib/telegram/bot-api";
@@ -158,6 +159,10 @@ export async function POST(request: Request) {
   const { mode, destHolderId, sourceHolderId, clientToken, lines } = parsed.data;
   const supabase = getServiceRoleClient();
 
+  // Captured before the RPC so it can be compared against the returned
+  // session's `committed_at` afterwards -- see the replay check below.
+  const requestStartedAt = new Date();
+
   // The generated Args type for submit_cart declares p_dest_holder_id /
   // p_source_holder_id as non-nullable `string`, but the underlying SQL
   // function's parameters are plain `uuid` (nullable) -- exactly one of
@@ -182,13 +187,39 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "submit_failed" }, { status: 500 });
   }
 
+  // Was this a replay? `submit_cart` hands back the ORIGINAL session id when
+  // the token has already been committed, and says nothing about it -- so a
+  // retry-after-timeout would otherwise re-run both best-effort steps below
+  // and send a second receipt for one cart. A session committed before this
+  // request even started cannot have been written by it.
+  //
+  // Best-effort like everything else after the commit: a failed lookup is
+  // logged and treated as a fresh write (a possibly-duplicate receipt beats a
+  // silently swallowed real one), and can never fail the request.
+  // Only meaningful when a token was sent: without one every submit is its
+  // own session by construction, so the extra round trip would buy nothing.
+  let isReplay = false;
+  if (clientToken && typeof data === "string") {
+    try {
+      const { data: session, error: sessionError } = await supabase
+        .from("sessions")
+        .select("committed_at")
+        .eq("id", data)
+        .maybeSingle();
+      if (sessionError) throw sessionError;
+      isReplay = isReplayCommit(session?.committed_at, requestStartedAt);
+    } catch (err) {
+      console.error("Failed to check whether this submit was a replay:", err);
+    }
+  }
+
   // Restock flag for `loose` lines the member marked "took the last of it".
   // Same best-effort positioning as the receipt: after the commit, never
   // able to fail it.
   const emptiedProductIds = [
     ...new Set(lines.filter((line) => line.tookLast).map((line) => line.productId)),
   ];
-  if (mode === "borrow" && emptiedProductIds.length > 0 && typeof data === "string") {
+  if (!isReplay && mode === "borrow" && emptiedProductIds.length > 0 && typeof data === "string") {
     try {
       await recordEmptyLevels(supabase, data, auth.member.id, emptiedProductIds);
     } catch (err) {
@@ -201,25 +232,31 @@ export async function POST(request: Request) {
   // already swallows its own errors) must never turn a successful submit
   // into a 500 for the member -- there is deliberately no retry/outbox for
   // this, it's a nice-to-have summary, not part of the write.
-  try {
-    const holderId = (mode === "borrow" ? destHolderId : sourceHolderId)!;
-    const productIds = [...new Set(lines.map((line) => line.productId))];
+  //
+  // Skipped entirely on a replay: one cart, one receipt. The member already
+  // got this exact summary when the token first committed, and a second copy
+  // reads as a second borrow they did not make.
+  if (!isReplay) {
+    try {
+      const holderId = (mode === "borrow" ? destHolderId : sourceHolderId)!;
+      const productIds = [...new Set(lines.map((line) => line.productId))];
 
-    const [{ data: products }, { data: holder }] = await Promise.all([
-      supabase.from("products").select("id, name, unit").in("id", productIds),
-      supabase.from("holders").select("name").eq("id", holderId).single(),
-    ]);
+      const [{ data: products }, { data: holder }] = await Promise.all([
+        supabase.from("products").select("id, name, unit").in("id", productIds),
+        supabase.from("holders").select("name").eq("id", holderId).single(),
+      ]);
 
-    const productById = new Map((products ?? []).map((product) => [product.id, product]));
-    const receiptLines = lines.map((line) => {
-      const product = productById.get(line.productId);
-      return { name: product?.name ?? "Unknown item", qty: line.qty, unit: product?.unit ?? "" };
-    });
+      const productById = new Map((products ?? []).map((product) => [product.id, product]));
+      const receiptLines = lines.map((line) => {
+        const product = productById.get(line.productId);
+        return { name: product?.name ?? "Unknown item", qty: line.qty, unit: product?.unit ?? "" };
+      });
 
-    const text = buildReceiptText({ mode, holderName: holder?.name ?? "—", lines: receiptLines });
-    await sendMessageSafely(auth.telegramUserId, text);
-  } catch (err) {
-    console.error("Failed to send cart receipt:", err);
+      const text = buildReceiptText({ mode, holderName: holder?.name ?? "—", lines: receiptLines });
+      await sendMessageSafely(auth.telegramUserId, text);
+    } catch (err) {
+      console.error("Failed to send cart receipt:", err);
+    }
   }
 
   return NextResponse.json({ sessionId: data, movementCount: lines.length });

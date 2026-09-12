@@ -36,6 +36,9 @@ export interface LabelHealthProduct {
   name: string;
   tier: string;
   active: boolean;
+  /** Where the product lives. Null for a product nobody has shelved yet;
+   *  a null location can never be covered by a group label. */
+  locationId?: string | null;
 }
 
 export interface LabelHealthCode {
@@ -43,6 +46,8 @@ export interface LabelHealthCode {
   productId: string | null;
   kind: string;
   active: boolean;
+  /** Set on `kind='group'` codes: the location the label is stuck to. */
+  locationId?: string | null;
 }
 
 export interface LabelHealthRow {
@@ -56,7 +61,10 @@ export interface LabelHealthRow {
   searchRatio: number | null;
   /** The active product code to reprint, if there is one. */
   code: string | null;
-  /** True when the product sits in a location covered by a `kind='group'` code. */
+  /** The active `kind='group'` code covering this product's location, if any. */
+  groupCode: string | null;
+  /** True when something scannable resolves to this product: its own product
+   *  code, or a group code on the shelf it lives on. */
   hasActiveCode: boolean;
   verdict: LabelVerdict;
 }
@@ -111,15 +119,29 @@ export function computeLabelHealth(
     counts.set(entry.productId, existing);
   }
 
-  // A product's own active code is what gets reprinted. Group codes are
-  // location-scoped and are handled by the caller (which knows locations);
-  // here a product with no product code and no entries is simply unlabelled.
+  // A product's own active code is what gets reprinted.
   const activeCodeByProduct = new Map<string, string>();
+  // ...but a product can also be perfectly well labelled WITHOUT one, via the
+  // group code on its shelf: that is the entire reason `kind='group'` exists
+  // (data-model.md -- the resistor book is one sticker resolving to ~157
+  // products, and printing 157 stickers for it was never the plan). This
+  // used to be left "to the caller", which no caller did, so every product
+  // behind a group label was reported as `no_label` -- the page's loudest
+  // signal, fired at the one arrangement working exactly as designed.
+  const groupCodeByLocation = new Map<string, string>();
   for (const code of codes) {
-    if (!code.active || code.kind !== "product" || !code.productId) continue;
-    // First active code wins; a product with two is a scan-codes page
-    // problem, not a label-health one.
-    if (!activeCodeByProduct.has(code.productId)) activeCodeByProduct.set(code.productId, code.code);
+    if (!code.active) continue;
+    if (code.kind === "product" && code.productId) {
+      // First active code wins; a product with two is a scan-codes page
+      // problem, not a label-health one.
+      if (!activeCodeByProduct.has(code.productId)) {
+        activeCodeByProduct.set(code.productId, code.code);
+      }
+    } else if (code.kind === "group" && code.locationId) {
+      if (!groupCodeByLocation.has(code.locationId)) {
+        groupCodeByLocation.set(code.locationId, code.code);
+      }
+    }
   }
 
   const rows: LabelHealthRow[] = [];
@@ -129,7 +151,10 @@ export function computeLabelHealth(
     const tally = counts.get(product.id) ?? { scanned: 0, searched: 0 };
     const total = tally.scanned + tally.searched;
     const code = activeCodeByProduct.get(product.id) ?? null;
-    const hasActiveCode = code !== null;
+    const groupCode = product.locationId
+      ? (groupCodeByLocation.get(product.locationId) ?? null)
+      : null;
+    const hasActiveCode = code !== null || groupCode !== null;
     const searchRatio = total === 0 ? null : tally.searched / total;
 
     let verdict: LabelVerdict;
@@ -156,6 +181,7 @@ export function computeLabelHealth(
       total,
       searchRatio,
       code,
+      groupCode,
       hasActiveCode,
       verdict,
     });

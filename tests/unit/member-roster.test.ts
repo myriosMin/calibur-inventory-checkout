@@ -68,7 +68,7 @@ describe("validateRosterValues — Telegram handle normalisation", () => {
     // operations.md §1.3: ~10-20% have no username set; they bind via the
     // bind queue later. Rejecting them here would lock out exactly the people
     // the bind queue exists for.
-    for (const value of ["", "   ", "@", undefined]) {
+    for (const value of ["", "   ", undefined]) {
       const { draft, errors } = validateRosterValues({
         full_name: "No Handle Person",
         telegram_username: value,
@@ -76,6 +76,29 @@ describe("validateRosterValues — Telegram handle normalisation", () => {
       expect(errors, `value: ${JSON.stringify(value)}`).toEqual([]);
       expect(draft?.telegram_username).toBeNull();
     }
+  });
+
+  it("flags a handle that is PRESENT but normalises away to nothing", () => {
+    // A bare "@" is not an empty cell: it used to import as a member with no
+    // handle and no warning -- someone who can never auto-bind, and whose row
+    // told the importing admin nothing. An empty cell stays valid (above);
+    // this one is the admin's to fix.
+    for (const value of ["@", " @ "]) {
+      const { draft, errors } = validateRosterValues({
+        full_name: "Typo Person",
+        telegram_username: value,
+      });
+      expect(draft, `value: ${JSON.stringify(value)}`).toBeNull();
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toContain(value.trim());
+      // The message has to tell them what to do instead, or they will just
+      // delete the person.
+      expect(errors[0]).toContain("Leave the cell empty");
+    }
+
+    // "@@" normalises to "@", which is a non-empty but illegal handle: still
+    // invalid, just caught by Telegram's own character rule instead.
+    expect(validateRosterValues({ full_name: "T", telegram_username: "@@" }).draft).toBeNull();
   });
 
   it("rejects handles Telegram itself would reject, naming the raw value", () => {

@@ -5,7 +5,7 @@ import {
   buildLowStockAlertText,
   buildNegativeStockAlertText,
   buildOverdueNudgeText,
-  buildWeeklyDigestText,
+  buildWeeklyDigestMessages,
   type OverdueItem,
 } from "@/lib/reports/messages";
 import { dueForNudge, outstandingLots, selectOverdue } from "@/lib/reports/overdue";
@@ -72,7 +72,13 @@ const TRANSITION_WINDOW_HOURS = 25;
 /** PDPA retention for `telegram_bind_attempts`. */
 const BIND_ATTEMPT_RETENTION_DAYS = 90;
 
-/** Telegram messages cap at 4096 characters; the digest stays well inside it. */
+/**
+ * Lines per digest section before it collapses into "and N more". The hard
+ * 4096-character Telegram cap is enforced separately by
+ * buildWeeklyDigestMessages, which splits (and, if it must, shrinks a
+ * section further) so a digest of real-length product names cannot be
+ * rejected by the API and silently vanish.
+ */
 const DIGEST_SECTION_LIMIT = 15;
 
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
@@ -194,13 +200,21 @@ export async function GET(request: Request) {
   const newlyNegative = selectNewlyNegative(negative, storeDeltas);
 
   const canAlert = alertChatId !== null;
+  // `due` is "we had something to say and somewhere to say it"; `alerted` is
+  // "Telegram accepted it". Keeping them apart matters because the whole point
+  // of this response is telling an admin whether the alert actually went out --
+  // a swallowed send that still reported success is how a digest silently stops
+  // arriving while the cron keeps looking healthy. Same convention as `digest`
+  // below, including a dry run reporting due=true / alerted=false.
+  let lowStockDue = false;
+  let negativeDue = false;
   let lowStockAlerted = false;
   let negativeAlerted = false;
 
   if (canAlert && newlyLow.length > 0) {
-    lowStockAlerted = true;
+    lowStockDue = true;
     if (!dryRun) {
-      await sendMessageSafely(
+      lowStockAlerted = await sendMessageSafely(
         alertChatId,
         buildLowStockAlertText(
           newlyLow.map((row) => ({
@@ -215,9 +229,9 @@ export async function GET(request: Request) {
   }
 
   if (canAlert && newlyNegative.length > 0) {
-    negativeAlerted = true;
+    negativeDue = true;
     if (!dryRun) {
-      await sendMessageSafely(
+      negativeAlerted = await sendMessageSafely(
         alertChatId,
         buildNegativeStockAlertText(
           newlyNegative.map((row) => ({
@@ -235,46 +249,55 @@ export async function GET(request: Request) {
   // -------------------------------------------------------------------------
   const digestDue = isDigestDay(now);
   let digestSent = false;
+  let digestMessages = 0;
+  let digestFailed = 0;
 
   if (digestDue && canAlert) {
-    digestSent = true;
+    const messages = buildWeeklyDigestMessages({
+      date: dateInZone(now),
+      outstanding: levels
+        .filter((row) => row.qtyOut > 0)
+        .sort((a, b) => b.qtyOut - a.qtyOut || a.name.localeCompare(b.name))
+        .map((row) => ({ name: row.name, qtyOut: row.qtyOut, unit: row.unit })),
+      lowStock: low.map((row) => ({
+        name: row.name,
+        qtyInStore: row.qtyInStore,
+        minStock: row.minStock,
+        unit: row.unit,
+      })),
+      negative: negative.map((row) => ({
+        name: row.name,
+        qtyInStore: row.qtyInStore,
+        unit: row.unit,
+      })),
+      overdue: overdue.flatMap((lot) => {
+        const borrower = borrowerByHolderId.get(lot.holderId);
+        const product = productById.get(lot.productId);
+        if (!borrower || !product) return [];
+        return [
+          {
+            memberName: borrower.memberName,
+            productName: product.name,
+            qty: lot.qty,
+            unit: product.unit,
+            daysOut: lot.daysOut,
+          },
+        ];
+      }),
+      sectionLimit: DIGEST_SECTION_LIMIT,
+    });
+    digestMessages = messages.length;
+
     if (!dryRun) {
-      await sendMessageSafely(
-        alertChatId,
-        buildWeeklyDigestText({
-          date: dateInZone(now),
-          outstanding: levels
-            .filter((row) => row.qtyOut > 0)
-            .sort((a, b) => b.qtyOut - a.qtyOut || a.name.localeCompare(b.name))
-            .map((row) => ({ name: row.name, qtyOut: row.qtyOut, unit: row.unit })),
-          lowStock: low.map((row) => ({
-            name: row.name,
-            qtyInStore: row.qtyInStore,
-            minStock: row.minStock,
-            unit: row.unit,
-          })),
-          negative: negative.map((row) => ({
-            name: row.name,
-            qtyInStore: row.qtyInStore,
-            unit: row.unit,
-          })),
-          overdue: overdue.flatMap((lot) => {
-            const borrower = borrowerByHolderId.get(lot.holderId);
-            const product = productById.get(lot.productId);
-            if (!borrower || !product) return [];
-            return [
-              {
-                memberName: borrower.memberName,
-                productName: product.name,
-                qty: lot.qty,
-                unit: product.unit,
-                daysOut: lot.daysOut,
-              },
-            ];
-          }),
-          sectionLimit: DIGEST_SECTION_LIMIT,
-        }),
-      );
+      for (const message of messages) {
+        // `sent` reports what Telegram accepted, not what we attempted: a
+        // digest that 400s (too long, chat gone) used to be reported as
+        // sent, which is how it could stop arriving for weeks while the
+        // cron kept looking healthy.
+        if (await sendMessageSafely(alertChatId, message)) continue;
+        digestFailed += 1;
+      }
+      digestSent = digestFailed === 0;
     }
   }
 
@@ -317,13 +340,25 @@ export async function GET(request: Request) {
       membersNotified: nudgesSent,
       membersUnreachable: nudgesUnreachable,
     },
-    lowStock: { total: low.length, newlyLow: newlyLow.length, alerted: lowStockAlerted },
+    lowStock: {
+      total: low.length,
+      newlyLow: newlyLow.length,
+      due: lowStockDue,
+      alerted: lowStockAlerted,
+    },
     negativeStock: {
       total: negative.length,
       newlyNegative: newlyNegative.length,
+      due: negativeDue,
       alerted: negativeAlerted,
     },
-    digest: { due: digestDue, sent: digestSent },
+    digest: {
+      due: digestDue,
+      /** How many Telegram messages the digest needs at today's volume. */
+      messages: digestMessages,
+      sent: digestSent,
+      failed: digestFailed,
+    },
     retention: {
       table: "telegram_bind_attempts",
       olderThanDays: BIND_ATTEMPT_RETENTION_DAYS,

@@ -10,6 +10,7 @@ import PageHeader from "@/components/admin/PageHeader";
 import StatusPill from "@/components/admin/StatusPill";
 import Button from "@/components/ui/Button";
 import { getBrowserClient } from "@/lib/supabase/browser";
+import { REPORT_ROW_LIMIT, truncationNotice } from "@/lib/reports/queries";
 
 import {
   countNegativeLines,
@@ -57,6 +58,8 @@ export default function AdminHoldingsPage() {
   const [products, setProducts] = useState<ProductRef[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** Set when one of the three reads came back at its row cap — see below. */
+  const [truncated, setTruncated] = useState<string | null>(null);
 
   const [kindFilter, setKindFilter] = useState<KindFilter>("");
   const [search, setSearch] = useState("");
@@ -68,10 +71,18 @@ export default function AdminHoldingsPage() {
     (async () => {
       setLoading(true);
       setLoadError(null);
+      // Explicit limits, not PostgREST's implicit 1000. `holdings` is one row
+      // per (product, holder) pair, so the real 538-row catalog spread across
+      // the store, a dozen robots and ~120 members passes 1000 rows long
+      // before anything else here does — and an unbounded select would simply
+      // stop at 1000 and show a confident, wrong balance sheet.
       const [holdingsRes, holdersRes, productsRes] = await Promise.all([
-        supabase.from("holdings").select("product_id, holder_id, qty"),
-        supabase.from("holders").select("id, name, kind").order("name"),
-        supabase.from("products").select("id, name, unit, tier"),
+        supabase
+          .from("holdings")
+          .select("product_id, holder_id, qty")
+          .limit(REPORT_ROW_LIMIT),
+        supabase.from("holders").select("id, name, kind").order("name").limit(REPORT_ROW_LIMIT),
+        supabase.from("products").select("id, name, unit, tier").limit(REPORT_ROW_LIMIT),
       ]);
       if (cancelled) return;
 
@@ -83,6 +94,11 @@ export default function AdminHoldingsPage() {
         setRows(holdingsRes.data ?? []);
         setHolders(holdersRes.data ?? []);
         setProducts(productsRes.data ?? []);
+        setTruncated(
+          truncationNotice("holding lines", holdingsRes.data?.length ?? 0) ??
+            truncationNotice("products", productsRes.data?.length ?? 0) ??
+            truncationNotice("holders", holdersRes.data?.length ?? 0),
+        );
       }
       setLoading(false);
     })();
@@ -149,6 +165,12 @@ export default function AdminHoldingsPage() {
         title="Holdings"
         description="Current balance per holder, derived from the movement ledger. This is the spreadsheet's free-text allocation remark, as real data."
       />
+
+      {truncated ? (
+        <Card title="Not the whole picture">
+          <p className="text-sm text-amber-300">{truncated}</p>
+        </Card>
+      ) : null}
 
       {!loading && !loadError && totalNegatives > 0 ? (
         <Card title="Negative balances">

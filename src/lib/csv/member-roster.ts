@@ -180,7 +180,15 @@ export function validateRosterValues(
   if (rawHandle) {
     const normalized = normalizeTelegramHandle(rawHandle);
     if (!normalized) {
-      handle = null;
+      // A cell holding a bare "@" (or anything else that normalises away to
+      // nothing) is NOT the same as an empty cell. It used to import as a
+      // member with no handle and no warning -- someone who can never
+      // auto-bind, and whose row gives the importing admin no hint why. An
+      // absent handle stays valid (operations.md §1.3 expects 10-20% to have
+      // none); a present-but-malformed one is the admin's to fix.
+      errors.push(
+        `"${rawHandle}" is not a Telegram username. Leave the cell empty if this member has no handle.`,
+      );
     } else if (!isValidTelegramHandle(normalized)) {
       errors.push(
         `"${rawHandle}" is not a valid Telegram username (5-32 characters, letters, digits and underscore only).`,

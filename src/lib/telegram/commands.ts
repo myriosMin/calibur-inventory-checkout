@@ -6,6 +6,15 @@ export interface ParsedCommand {
   command: BotCommand;
   /** Everything after the command word, trimmed. `/start ABC123` -> "ABC123". */
   args: string;
+  /**
+   * The bot the command was explicitly addressed to, lowercased and without
+   * the `@`, or null when it was not addressed to anyone
+   * (`/help@calibur_parts_bot` -> "calibur_parts_bot"; `/help` -> null).
+   *
+   * In a DM this is noise. In a group it is the whole question: several bots
+   * can share a chat, and a `/start@other_bot` is not ours to answer.
+   */
+  mention: string | null;
 }
 
 const KNOWN_COMMANDS: readonly BotCommand[] = ["/start", "/myitems", "/help"];
@@ -40,8 +49,70 @@ export function parseCommand(text: string): ParsedCommand | null {
   const atIndex = head.indexOf("@");
   const word = (atIndex === -1 ? head : head.slice(0, atIndex)).toLowerCase();
 
+  const mention = atIndex === -1 ? null : head.slice(atIndex + 1).toLowerCase() || null;
+
   const command = KNOWN_COMMANDS.find((known) => known === word);
-  return command ? { command, args } : null;
+  return command ? { command, args, mention } : null;
+}
+
+/**
+ * What the webhook should do with one inbound message, given the chat it
+ * arrived in. Pure, so the group-chat rules below are testable without a
+ * webhook, a bot token or a network call.
+ *
+ * The rules exist because the alert-chat feature (`/api/cron/daily` posting
+ * low-stock and digest messages to the club group) REQUIRES this bot to join
+ * the club group. Before this function, that meant every `/anything` typed by
+ * any member in that group produced a public "I didn't understand that", and
+ * a `/start` ran identity binding and announced the result to 120 people.
+ *
+ *   - Private chat: unchanged. Known command -> handle it; anything else ->
+ *     the plain-text fallback (flows.md §8's degraded mode for "Mini App
+ *     won't load").
+ *   - Group/supergroup/channel: answer ONLY a known command explicitly
+ *     addressed to this bot (`/cmd@this_bot`). Everything else -- an
+ *     unaddressed command, a command aimed at another bot, plain chatter --
+ *     is silence. There is no group fallback, by design: a bot that talks
+ *     over a club chat gets muted, and a muted bot cannot deliver the alerts
+ *     it joined the group for.
+ *
+ * An absent `chatType` is read as private: Telegram always sends it, so the
+ * only updates without one are fabricated, and the conservative reading of
+ * "unknown chat" for a bot whose real traffic is DMs is the DM behaviour.
+ * An empty/absent `botUsername` makes addressing impossible, so every group
+ * message falls through to silence rather than to a public reply.
+ */
+export type MessageRoute =
+  | { action: "handle"; command: BotCommand; args: string }
+  /** Private chat, nothing recognised: reply with buildFallbackText(). */
+  | { action: "fallback" }
+  /** Group chat, not addressed to us: ack and say nothing at all. */
+  | { action: "ignore" };
+
+export function routeMessage(
+  text: string,
+  chatType: string | null | undefined,
+  botUsername: string | null | undefined,
+): MessageRoute {
+  const parsed = parseCommand(text);
+  const isPrivate = (chatType ?? "private") === "private";
+
+  if (isPrivate) {
+    return parsed
+      ? { action: "handle", command: parsed.command, args: parsed.args }
+      : { action: "fallback" };
+  }
+
+  const me = normalizeBotUsername(botUsername);
+  if (!parsed || !me || parsed.mention !== me) return { action: "ignore" };
+  return { action: "handle", command: parsed.command, args: parsed.args };
+}
+
+/** `@Calibur_Parts_Bot` / `Calibur_Parts_Bot` -> `calibur_parts_bot`. */
+export function normalizeBotUsername(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim().replace(/^@/, "").toLowerCase();
+  return trimmed || null;
 }
 
 /** Shared body listing what the bot understands, reused verbatim by /help and

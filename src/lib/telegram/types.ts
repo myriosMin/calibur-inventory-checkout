@@ -26,6 +26,13 @@ export interface TelegramFrom {
 
 export interface TelegramChat {
   id: number;
+  /**
+   * "private" | "group" | "supergroup" | "channel". Telegram always sends
+   * it; it is optional here only so the many fabricated updates in the test
+   * suite (and any legacy caller) stay valid, and an absent value is read as
+   * "private" -- see `routeMessage` in ./commands.ts.
+   */
+  type?: string;
 }
 
 export interface TelegramMessage {

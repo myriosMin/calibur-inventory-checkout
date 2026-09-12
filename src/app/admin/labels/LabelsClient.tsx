@@ -19,6 +19,7 @@ import {
 } from "@/lib/codes/label-url";
 import { MIN_QR_SYMBOL_MM, symbolSizeMm } from "@/lib/codes/qr";
 import { getBrowserClient } from "@/lib/supabase/browser";
+import { REPORT_ROW_LIMIT, truncationNotice } from "@/lib/reports/queries";
 
 import LabelSheet from "./LabelSheet";
 import {
@@ -66,6 +67,8 @@ export default function LabelsClient() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
+  /** Set when one of the three reads came back at its row cap — see loadAll. */
+  const [truncated, setTruncated] = useState<string | null>(null);
 
   const [locationFilter, setLocationFilter] = useState<string>(ALL_LOCATIONS);
   const [search, setSearch] = useState("");
@@ -96,16 +99,26 @@ export default function LabelsClient() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
+    // Explicit limits, not PostgREST's implicit 1000. One code per product on
+    // the real 538-row catalog is already halfway there, and a print page that
+    // silently drops labels is how a shelf ends up with no sticker and nobody
+    // knowing why.
     const [codesRes, productsRes, locationsRes] = await Promise.all([
-      supabase.from("scan_codes").select("*").order("created_at", { ascending: false }),
+      supabase
+        .from("scan_codes")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(REPORT_ROW_LIMIT),
       supabase
         .from("products")
         .select("id, name, location_id, tier, active, part_number")
-        .order("name", { ascending: true }),
+        .order("name", { ascending: true })
+        .limit(REPORT_ROW_LIMIT),
       supabase
         .from("locations")
         .select("id, name, parent_id")
-        .order("name", { ascending: true }),
+        .order("name", { ascending: true })
+        .limit(REPORT_ROW_LIMIT),
     ]);
 
     const firstError = codesRes.error ?? productsRes.error ?? locationsRes.error;
@@ -118,6 +131,11 @@ export default function LabelsClient() {
     setScanCodes(codesRes.data ?? []);
     setProducts(productsRes.data ?? []);
     setLocations(locationsRes.data ?? []);
+    setTruncated(
+      truncationNotice("scan codes", codesRes.data?.length ?? 0) ??
+        truncationNotice("products", productsRes.data?.length ?? 0) ??
+        truncationNotice("locations", locationsRes.data?.length ?? 0),
+    );
     setLoading(false);
   }, [supabase]);
 
@@ -434,6 +452,12 @@ export default function LabelsClient() {
           />
         )}
       </div>
+
+      {truncated ? (
+        <div className={SCREEN_ONLY_CLASS}>
+          <Toast variant="error" message={truncated} />
+        </div>
+      ) : null}
 
       {geometryWarnings.length > 0 ? (
         <div className={`space-y-2 ${SCREEN_ONLY_CLASS}`}>
