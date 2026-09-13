@@ -3,88 +3,94 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import Card from "@/components/admin/Card";
+import DataTable, { type Column } from "@/components/admin/DataTable";
+import PageHeader from "@/components/admin/PageHeader";
+import StatusPill from "@/components/admin/StatusPill";
 import Button from "@/components/ui/Button";
 import Toast from "@/components/ui/Toast";
 import { getBrowserClient } from "@/lib/supabase/browser";
-import type { Database } from "@/lib/types/database";
+import { fetchAllRows } from "@/lib/supabase/fetch-all";
 
-type Product = Database["public"]["Tables"]["products"]["Row"];
-type Location = Database["public"]["Tables"]["locations"]["Row"];
-type Tier = Database["public"]["Tables"]["products"]["Row"]["tier"];
+import ProductFormFields, { type LocationOption } from "./ProductFormFields";
+import { CRITICALITIES, EMPTY_PRODUCT_FORM, formToRow, type ProductFormState } from "./product-form";
+import {
+  DEFAULT_PRODUCT_FILTERS,
+  distinctCategories,
+  filterProducts,
+  type ProductListFilters,
+  type ProductListRow,
+} from "./product-list";
 
-const TIERS: Tier[] = ["asset", "bulk", "loose"];
-
-const EMPTY_FORM = {
-  name: "",
-  tier: "loose" as Tier,
-  category: "",
-  location_id: "",
-  returnable: false,
-  unit: "pcs",
-  part_number: "",
-  spec: "",
-  min_stock: "",
-  notes: "",
-  active: true,
-};
-
-type FormState = typeof EMPTY_FORM;
+const INPUT = "min-h-11 rounded-lg border border-neutral-700 px-3 text-sm";
 
 /**
- * Admin product list + create form. Everything here goes through the anon
- * `getBrowserClient()` -- Postgres RLS's `is_admin()` policy is the only
- * thing standing between an unauthenticated visitor and these mutations, so
- * every insert/update below surfaces its error rather than assuming success.
+ * The catalog, as the reviewers and procurement see it: what exists, how
+ * critical it is, how many are in the store and out, and whether anything
+ * about it is still waiting in the review queue. Everything goes through the
+ * anon browser client -- RLS (is_admin / is_staff) is the only boundary.
  */
 export default function AdminProductsPage() {
   const supabase = useMemo(() => getBrowserClient(), []);
 
-  const [products, setProducts] = useState<Product[]>([]);
-  const [locations, setLocations] = useState<Location[]>([]);
+  const [rows, setRows] = useState<ProductListRow[]>([]);
+  const [locations, setLocations] = useState<LocationOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [filters, setFilters] = useState<ProductListFilters>(DEFAULT_PRODUCT_FILTERS);
 
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [submitting, setSubmitting] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [form, setForm] = useState<ProductFormState>(EMPTY_PRODUCT_FORM);
+  const [creating, setCreating] = useState(false);
+  const [toast, setToast] = useState<{ variant: "success" | "error"; message: string } | null>(null);
 
-  const [newLocationName, setNewLocationName] = useState("");
-  const [creatingLocation, setCreatingLocation] = useState(false);
-  const [locationError, setLocationError] = useState<string | null>(null);
+  async function loadAll() {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [products, summaries, reviews, locationsRes] = await Promise.all([
+        fetchAllRows((from, to) => supabase.from("products").select("*").order("name").order("id").range(from, to)),
+        fetchAllRows((from, to) =>
+          supabase.from("stock_summary").select("product_id, qty_in_store, qty_out").order("product_id").range(from, to),
+        ),
+        fetchAllRows((from, to) =>
+          supabase
+            .from("review_items")
+            .select("id, product_id")
+            .eq("status", "open")
+            .not("product_id", "is", null)
+            .order("id")
+            .range(from, to),
+        ),
+        supabase.from("locations").select("id, name").order("name"),
+      ]);
+      if (locationsRes.error) throw new Error(locationsRes.error.message);
 
-  async function loadProducts() {
-    const { data, error } = await supabase
-      .from("products")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) throw error;
-    setProducts(data ?? []);
-  }
-
-  async function loadLocations() {
-    const { data, error } = await supabase
-      .from("locations")
-      .select("*")
-      .order("name", { ascending: true });
-    if (error) throw error;
-    setLocations(data ?? []);
+      const stock = new Map(summaries.map((s) => [s.product_id, s]));
+      const openReviews = new Map<string, number>();
+      for (const review of reviews) {
+        if (review.product_id) openReviews.set(review.product_id, (openReviews.get(review.product_id) ?? 0) + 1);
+      }
+      setRows(
+        products.map((product) => ({
+          ...product,
+          qtyInStore: stock.get(product.id)?.qty_in_store ?? null,
+          qtyOut: stock.get(product.id)?.qty_out ?? null,
+          openReviews: openReviews.get(product.id) ?? 0,
+        })),
+      );
+      setLocations(locationsRes.data ?? []);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Failed to load.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      setLoading(true);
-      setLoadError(null);
-      try {
-        await Promise.all([loadProducts(), loadLocations()]);
-      } catch (err) {
-        if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : "Failed to load.");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      if (!cancelled) await loadAll();
     })();
     return () => {
       cancelled = true;
@@ -92,361 +98,193 @@ export default function AdminProductsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleCreateLocation() {
-    const name = newLocationName.trim();
-    if (!name) return;
-    setCreatingLocation(true);
-    setLocationError(null);
-    try {
-      const { data, error } = await supabase
-        .from("locations")
-        .insert({ name })
-        .select()
-        .single();
-      if (error) throw error;
-      setLocations((prev) =>
-        [...prev, data].sort((a, b) => a.name.localeCompare(b.name)),
-      );
-      setForm((prev) => ({ ...prev, location_id: data.id }));
-      setNewLocationName("");
-    } catch (err) {
-      setLocationError(
-        err instanceof Error ? err.message : "Failed to create location.",
-      );
-    } finally {
-      setCreatingLocation(false);
-    }
-  }
+  const categories = useMemo(() => distinctCategories(rows), [rows]);
+  const visible = useMemo(() => filterProducts(rows, filters), [rows, filters]);
+  const locationName = (id: string | null) => (id ? (locations.find((l) => l.id === id)?.name ?? "—") : "—");
+  const needsReviewCount = rows.filter((r) => r.openReviews > 0).length;
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    setFormError(null);
-    setSuccessMessage(null);
-
-    const name = form.name.trim();
-    if (!name) {
-      setFormError("Name is required.");
+    const result = formToRow(form);
+    if (!result.ok) {
+      setToast({ variant: "error", message: result.error });
       return;
     }
-
-    let spec: unknown = null;
-    const trimmedSpec = form.spec.trim();
-    if (trimmedSpec) {
-      try {
-        spec = JSON.parse(trimmedSpec);
-      } catch {
-        setFormError("Spec must be valid JSON (or left empty).");
-        return;
-      }
+    setCreating(true);
+    const { data, error } = await supabase.from("products").insert(result.row).select("id, name").single();
+    setCreating(false);
+    if (error) {
+      setToast({ variant: "error", message: error.message });
+      return;
     }
-
-    let minStock: number | null = null;
-    if (form.min_stock.trim()) {
-      const parsed = Number(form.min_stock);
-      if (!Number.isFinite(parsed)) {
-        setFormError("Min stock must be a number.");
-        return;
-      }
-      minStock = parsed;
-    }
-
-    setSubmitting(true);
-    try {
-      const { data, error } = await supabase
-        .from("products")
-        .insert({
-          name,
-          tier: form.tier,
-          category: form.category.trim() || null,
-          location_id: form.location_id || null,
-          returnable: form.returnable,
-          unit: form.unit.trim() || "pcs",
-          part_number: form.part_number.trim() || null,
-          spec: spec as never,
-          min_stock: minStock,
-          notes: form.notes.trim() || null,
-          active: form.active,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      setProducts((prev) => [data, ...prev]);
-      setForm(EMPTY_FORM);
-      setSuccessMessage(`Created "${data.name}".`);
-    } catch (err) {
-      setFormError(
-        err instanceof Error ? err.message : "Failed to create product.",
-      );
-    } finally {
-      setSubmitting(false);
-    }
+    setForm(EMPTY_PRODUCT_FORM);
+    setFormOpen(false);
+    setToast({
+      variant: "success",
+      message: `Created "${data.name}". It starts with no stock: receive it on the Restock page.`,
+    });
+    await loadAll();
   }
 
-  const locationName = (id: string | null) =>
-    id ? (locations.find((l) => l.id === id)?.name ?? id) : "—";
+  const columns: Column<ProductListRow>[] = [
+    {
+      key: "name",
+      header: "Name",
+      render: (row) => (
+        <Link href={`/admin/products/${row.id}`} className="block min-w-48 hover:text-red-300">
+          <span className="font-medium text-neutral-100">{row.name}</span>
+          <span className="block text-xs text-neutral-400">
+            {[row.part_number, locationName(row.location_id)].filter((v) => v && v !== "—").join(" · ") || " "}
+          </span>
+        </Link>
+      ),
+    },
+    { key: "category", header: "Category", render: (row) => row.category ?? "—" },
+    {
+      key: "criticality",
+      header: "Criticality",
+      render: (row) =>
+        row.criticality === "critical" ? <StatusPill tone="danger">critical</StatusPill> : row.criticality,
+    },
+    {
+      key: "ownership",
+      header: "Owner",
+      render: (row) =>
+        row.ownership === "owned" ? (
+          "club"
+        ) : (
+          <StatusPill tone="warning">{row.ownership === "on_loan" ? "on loan" : "some on loan"}</StatusPill>
+        ),
+    },
+    {
+      key: "store",
+      header: "In store",
+      className: "text-right tabular-nums",
+      render: (row) =>
+        row.qtyInStore === null ? (
+          "—"
+        ) : row.qtyInStore < 0 ? (
+          <StatusPill tone="danger">{row.qtyInStore}</StatusPill>
+        ) : row.tier === "loose" && row.qtyInStore === 0 ? (
+          "level"
+        ) : (
+          row.qtyInStore
+        ),
+    },
+    { key: "out", header: "Out", className: "text-right tabular-nums", render: (row) => row.qtyOut ?? "—" },
+    {
+      key: "review",
+      header: "Review",
+      render: (row) => (row.openReviews > 0 ? <StatusPill tone="warning">{row.openReviews} open</StatusPill> : "—"),
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (row) => <StatusPill tone={row.active ? "active" : "inactive"}>{row.active ? "active" : "inactive"}</StatusPill>,
+    },
+  ];
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-xl font-semibold text-neutral-100">Products</h1>
-        <p className="text-sm text-neutral-400">
-          Create and manage the catalog. Changes take effect immediately for
-          the Mini App.
-        </p>
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Products"
+        description="The catalog. Open a product to fix its details, see where every unit is, and work through its review items. Quantities are corrected in Stocktake, never typed over."
+        actions={
+          <Button onClick={() => setFormOpen((open) => !open)} variant={formOpen ? "ghost" : undefined}>
+            {formOpen ? "Close" : "New product"}
+          </Button>
+        }
+      />
 
-      <section className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-        <h2 className="mb-4 text-sm font-semibold text-neutral-100">
-          New product
-        </h2>
+      {toast ? <Toast variant={toast.variant} message={toast.message} onDismiss={() => setToast(null)} /> : null}
 
-        {formError ? (
-          <div className="mb-4">
-            <Toast variant="error" message={formError} onDismiss={() => setFormError(null)} />
-          </div>
-        ) : null}
-        {successMessage ? (
-          <div className="mb-4">
-            <Toast
-              variant="success"
-              message={successMessage}
-              onDismiss={() => setSuccessMessage(null)}
-            />
-          </div>
-        ) : null}
-
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-neutral-200">Name *</span>
-            <input
-              required
-              value={form.name}
-              onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-neutral-200">Tier *</span>
-            <select
-              value={form.tier}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, tier: e.target.value as Tier }))
+      {formOpen ? (
+        <Card title="New product">
+          <form onSubmit={handleCreate} className="flex flex-col gap-4">
+            <ProductFormFields
+              form={form}
+              onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+              locations={locations}
+              onLocationCreated={(loc) =>
+                setLocations((prev) => [...prev, loc].sort((a, b) => a.name.localeCompare(b.name)))
               }
-              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
-            >
-              {TIERS.map((tier) => (
-                <option key={tier} value={tier}>
-                  {tier}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-neutral-200">Category</span>
-            <input
-              value={form.category}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, category: e.target.value }))
-              }
-              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
+              categories={categories}
             />
-          </label>
-
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-neutral-200">Location</span>
-            <select
-              value={form.location_id}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, location_id: e.target.value }))
-              }
-              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
-            >
-              <option value="">— none —</option>
-              {locations.map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.name}
-                </option>
-              ))}
-            </select>
-            <div className="mt-1 flex gap-2">
-              <input
-                value={newLocationName}
-                onChange={(e) => setNewLocationName(e.target.value)}
-                placeholder="New location name"
-                className="min-w-0 flex-1 rounded-lg border border-neutral-700 px-3 py-1.5 text-xs"
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={creatingLocation || !newLocationName.trim()}
-                onClick={handleCreateLocation}
-                className="min-h-0 px-3 py-1.5 text-xs"
-              >
-                + New location
+            <div>
+              <Button type="submit" disabled={creating}>
+                {creating ? "Creating…" : "Create product"}
               </Button>
             </div>
-            {locationError ? (
-              <span className="text-xs text-red-400">{locationError}</span>
-            ) : null}
-          </div>
+          </form>
+        </Card>
+      ) : null}
 
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-neutral-200">Unit</span>
+      <Card>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <input
+            type="search"
+            value={filters.query}
+            onChange={(e) => setFilters((f) => ({ ...f, query: e.target.value }))}
+            placeholder="Search name, part number, supplier…"
+            className={`${INPUT} sm:col-span-2`}
+          />
+          <select
+            value={filters.category}
+            onChange={(e) => setFilters((f) => ({ ...f, category: e.target.value }))}
+            className={INPUT}
+            aria-label="Category"
+          >
+            <option value="">All categories</option>
+            {categories.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filters.criticality}
+            onChange={(e) => setFilters((f) => ({ ...f, criticality: e.target.value as ProductListFilters["criticality"] }))}
+            className={INPUT}
+            aria-label="Criticality"
+          >
+            <option value="all">Any criticality</option>
+            {CRITICALITIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filters.status}
+            onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value as ProductListFilters["status"] }))}
+            className={INPUT}
+            aria-label="Status"
+          >
+            <option value="all">Active and inactive</option>
+            <option value="active">Active only</option>
+            <option value="inactive">Inactive only</option>
+          </select>
+          <label className="flex min-h-11 items-center gap-2 text-sm text-neutral-200">
             <input
-              value={form.unit}
-              onChange={(e) => setForm((p) => ({ ...p, unit: e.target.value }))}
-              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
+              type="checkbox"
+              checked={filters.onlyNeedsReview}
+              onChange={(e) => setFilters((f) => ({ ...f, onlyNeedsReview: e.target.checked }))}
             />
+            Needs review ({needsReviewCount})
           </label>
-
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-neutral-200">Part number</span>
-            <input
-              value={form.part_number}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, part_number: e.target.value }))
-              }
-              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-neutral-200">Min stock</span>
-            <input
-              type="number"
-              value={form.min_stock}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, min_stock: e.target.value }))
-              }
-              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <div className="flex items-center gap-4 pt-6">
-            <label className="flex items-center gap-2 text-sm text-neutral-200">
-              <input
-                type="checkbox"
-                checked={form.returnable}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, returnable: e.target.checked }))
-                }
-              />
-              Returnable
-            </label>
-            <label className="flex items-center gap-2 text-sm text-neutral-200">
-              <input
-                type="checkbox"
-                checked={form.active}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, active: e.target.checked }))
-                }
-              />
-              Active
-            </label>
-          </div>
-
-          <label className="flex flex-col gap-1 text-sm sm:col-span-2">
-            <span className="font-medium text-neutral-200">
-              Spec (JSON, optional)
-            </span>
-            <textarea
-              value={form.spec}
-              onChange={(e) => setForm((p) => ({ ...p, spec: e.target.value }))}
-              rows={3}
-              placeholder='{"value": "10k", "package": "0805"}'
-              className="rounded-lg border border-neutral-700 px-3 py-2 font-mono text-xs"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm sm:col-span-2">
-            <span className="font-medium text-neutral-200">Notes</span>
-            <textarea
-              value={form.notes}
-              onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
-              rows={2}
-              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <div className="sm:col-span-2">
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Creating…" : "Create product"}
-            </Button>
-          </div>
-        </form>
-      </section>
-
-      <section className="rounded-xl border border-neutral-800 bg-neutral-900">
-        <div className="border-b border-neutral-800 px-4 py-3">
-          <h2 className="text-sm font-semibold text-neutral-100">
-            All products ({products.length})
-          </h2>
         </div>
+      </Card>
 
-        {loading ? (
-          <p className="p-4 text-sm text-neutral-400">Loading…</p>
-        ) : loadError ? (
-          <div className="p-4">
-            <Toast variant="error" message={loadError} />
-          </div>
-        ) : products.length === 0 ? (
-          <p className="p-4 text-sm text-neutral-400">No products yet.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-neutral-950 text-xs uppercase tracking-wide text-neutral-400">
-                <tr>
-                  <th className="px-4 py-2 font-medium">Name</th>
-                  <th className="px-4 py-2 font-medium">Tier</th>
-                  <th className="px-4 py-2 font-medium">Category</th>
-                  <th className="px-4 py-2 font-medium">Location</th>
-                  <th className="px-4 py-2 font-medium">Active</th>
-                  <th className="px-4 py-2" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-800">
-                {products.map((product) => (
-                  <tr key={product.id}>
-                    <td className="px-4 py-2 font-medium text-neutral-100">
-                      {product.name}
-                    </td>
-                    <td className="px-4 py-2 text-neutral-300">{product.tier}</td>
-                    <td className="px-4 py-2 text-neutral-300">
-                      {product.category ?? "—"}
-                    </td>
-                    <td className="px-4 py-2 text-neutral-300">
-                      {locationName(product.location_id)}
-                    </td>
-                    <td className="px-4 py-2">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          product.active
-                            ? "bg-green-500/10 text-green-400"
-                            : "bg-neutral-800 text-neutral-400"
-                        }`}
-                      >
-                        {product.active ? "active" : "inactive"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      <Link
-                        href={`/admin/products/${product.id}`}
-                        className="text-sm font-medium text-red-400 hover:text-red-300"
-                      >
-                        Edit
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+      <Card title={`Showing ${visible.length} of ${rows.length}`} padded={false}>
+        <DataTable
+          columns={columns}
+          rows={visible}
+          rowKey={(row) => row.id}
+          loading={loading}
+          error={loadError}
+          emptyMessage={rows.length === 0 ? "No products yet." : "Nothing matches these filters."}
+        />
+      </Card>
     </div>
   );
 }

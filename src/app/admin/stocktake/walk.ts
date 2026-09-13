@@ -1,5 +1,6 @@
 /**
- * One stocktake walk = one shelf, counted standing up, on a phone.
+ * One stocktake walk = one shelf (or one robot), counted standing up, on a
+ * phone.
  *
  * There is deliberately NO draft table behind this. It follows the same
  * shape as the Mini App cart (docs/tele-qr/architecture.md): client state
@@ -27,9 +28,22 @@ export interface StocktakeWalk {
    * wifi) can be retried with the same token and will never double-correct.
    */
   clientToken: string;
-  /** null = the "no location set" bucket, for a mid-migration catalog. */
+  /**
+   * The holder being counted. null = the store, walked one shelf at a time
+   * (`locationId` says which). A robot's holder id = everything the ledger
+   * says is on that robot, which is how the per-robot allocations imported
+   * from the old spreadsheet get corrected.
+   */
+  holderId: string | null;
+  /** null = the "no location set" bucket, for a mid-migration catalog. Always null for a robot walk. */
   locationId: string | null;
+  /** The shelf name, or the robot name for a robot walk. */
   locationName: string;
+  /**
+   * Robot walks only: products added by hand because the ledger doesn't list
+   * them on the robot at all (the motor someone bolted on without logging it).
+   */
+  addedProductIds: string[];
   startedAt: string;
   updatedAt: string;
   /**
@@ -80,6 +94,7 @@ export const COUNT_ERROR_MESSAGES: Record<CountParseError, string> = {
 
 export function newWalk(params: {
   clientToken: string;
+  holderId?: string | null;
   locationId: string | null;
   locationName: string;
   now?: string;
@@ -88,8 +103,10 @@ export function newWalk(params: {
   return {
     version: WALK_VERSION,
     clientToken: params.clientToken,
+    holderId: params.holderId ?? null,
     locationId: params.locationId,
     locationName: params.locationName,
+    addedProductIds: [],
     startedAt: now,
     updatedAt: now,
     counts: {},
@@ -114,6 +131,16 @@ export function setWalkCount(
     counts[productId] = raw;
   }
   return { ...walk, counts, updatedAt: now ?? new Date().toISOString() };
+}
+
+/** Adds a product to a robot walk. Adding one already listed is a no-op. */
+export function addWalkProduct(walk: StocktakeWalk, productId: string, now?: string): StocktakeWalk {
+  if (walk.addedProductIds.includes(productId)) return walk;
+  return {
+    ...walk,
+    addedProductIds: [...walk.addedProductIds, productId],
+    updatedAt: now ?? new Date().toISOString(),
+  };
 }
 
 export function enteredCount(walk: StocktakeWalk): number {
@@ -286,6 +313,10 @@ function isCountsRecord(value: unknown): value is Record<string, string> {
  * a convenience; a half-understood restore that silently drops or invents
  * counts is worse than starting over, so the bar for accepting one is
  * "every field is the right type".
+ *
+ * `holderId` and `addedProductIds` arrived with robot counting. A walk saved
+ * before that has neither and is a store walk, so their absence is accepted;
+ * a present-but-wrong-typed value is not.
  */
 export function deserializeWalk(raw: string | null): StocktakeWalk | null {
   if (!raw) return null;
@@ -303,12 +334,25 @@ export function deserializeWalk(raw: string | null): StocktakeWalk | null {
     return null;
   }
   if (
+    candidate.holderId !== undefined &&
+    typeof candidate.holderId !== "string" &&
+    candidate.holderId !== null
+  ) {
+    return null;
+  }
+  if (
     typeof candidate.locationId !== "string" &&
     candidate.locationId !== null
   ) {
     return null;
   }
   if (typeof candidate.locationName !== "string") return null;
+  if (
+    candidate.addedProductIds !== undefined &&
+    !(Array.isArray(candidate.addedProductIds) && candidate.addedProductIds.every((id) => typeof id === "string"))
+  ) {
+    return null;
+  }
   if (typeof candidate.startedAt !== "string") return null;
   if (typeof candidate.updatedAt !== "string") return null;
   if (!isCountsRecord(candidate.counts)) return null;
@@ -316,8 +360,10 @@ export function deserializeWalk(raw: string | null): StocktakeWalk | null {
   return {
     version: WALK_VERSION,
     clientToken: candidate.clientToken,
+    holderId: candidate.holderId ?? null,
     locationId: candidate.locationId,
     locationName: candidate.locationName,
+    addedProductIds: candidate.addedProductIds ?? [],
     startedAt: candidate.startedAt,
     updatedAt: candidate.updatedAt,
     counts: candidate.counts,

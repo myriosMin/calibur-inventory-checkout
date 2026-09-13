@@ -2,41 +2,35 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import { getBrowserClient } from "@/lib/supabase/browser";
 
-const NAV_LINKS = [
-  { href: "/admin", label: "Dashboard" },
-  { href: "/admin/products", label: "Products" },
-  { href: "/admin/holders", label: "Holders" },
-  { href: "/admin/members", label: "Members" },
-  { href: "/admin/scan-codes", label: "Scan codes" },
-  { href: "/admin/bind-queue", label: "Bind queue" },
-  { href: "/admin/restock", label: "Restock" },
-  { href: "/admin/movements", label: "Movements" },
-  { href: "/admin/holdings", label: "Holdings" },
-  { href: "/admin/stocktake", label: "Stocktake" },
-  { href: "/admin/labels", label: "Labels" },
-];
-
-/**
- * Prefix match, so a detail route like /admin/movements/123 still highlights
- * "Movements" -- the previous exact-equality check highlighted nothing there.
- * "/admin" itself is special-cased to exact equality: as a prefix it matches
- * every route in the section and would light up Dashboard permanently.
- * The trailing-slash guard stops "/admin/holdings" from also matching
- * "/admin/holders" style neighbours by bare string prefix.
- */
-function isActive(pathname: string, href: string): boolean {
-  if (href === "/admin") return pathname === "/admin";
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
+import { isActive, visibleNavLinks } from "./nav";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const onLogin = pathname === "/admin/login";
+  const [isAdmin, setIsAdmin] = useState(false);
 
-  if (pathname === "/admin/login") {
+  // Re-checked when leaving the login page: this layout stays mounted across
+  // the sign-in navigation, so a mount-only check would still hold the
+  // signed-out answer.
+  useEffect(() => {
+    if (onLogin) return;
+    let cancelled = false;
+    getBrowserClient()
+      .rpc("is_admin")
+      .then(({ data }) => {
+        if (!cancelled) setIsAdmin(data === true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [onLogin]);
+
+  if (onLogin) {
     return <>{children}</>;
   }
 
@@ -52,7 +46,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <header className="border-b border-neutral-800 bg-neutral-900">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <nav className="flex flex-wrap gap-4">
-            {NAV_LINKS.map((link) => (
+            {visibleNavLinks(isAdmin).map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
