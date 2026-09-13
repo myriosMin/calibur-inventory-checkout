@@ -2,30 +2,37 @@
 
 ## TL;DR
 
-- **The real inventory is cleaned and rehearsed, not yet imported.**
-  `scripts/clean-data/build.ts` turns the spreadsheet
-  (`data/RoboMaster_Inventory_3_Sheets.xlsx`) and the legacy checkout app's
-  export (`data/db/*.csv`) into a review package in `data/clean/`.
-  `scripts/import-clean-data.ts` turns the reviewed package into one SQL
-  transaction. Migration 0024 plus the full import has been run against the
-  live Supabase project inside a transaction that rolls back: 555 products,
-  314 serialised units, 591 opening-balance movements, **0 negative holdings**.
-- **Migration 0024 adds what the club asked for**: `products.ownership`
-  (owned / on loan to the club / mixed), `products.criticality` (critical /
-  standard / expendable), a per-unit `asset_units` register, procurement
-  fields, and a `procurement` role with its own RLS. **Not applied yet.**
-- **Nothing here has been confirmed by the people who run the store.** Every
-  judgement call is either a row in `data/clean/review_flags.csv` (1 blocker,
-  104 checks, 36 info) or visible in the output columns. SME review comes
-  next, and reviewers edit the CSVs, not the code.
-- **The legacy app's numbers can't be trusted blind.** It replaced every
-  non-numeric or blank quantity, and every not-yet-bought BOM line, with an
-  invented **100** (100 rows). It also copied stale referee-system totals
-  instead of counting the unit register.
+- **The real inventory is cleaned and rehearsed.** The next step is loading
+  it into a new Supabase project, where the people who run the store review
+  it in `/admin`.
+- **Two scripts do the work:**
+  - `scripts/clean-data/build.ts` turns the spreadsheet
+    (`data/RoboMaster_Inventory_3_Sheets.xlsx`) and the legacy checkout
+    app's export (`data/db/*.csv`) into `data/clean/`.
+  - `scripts/import-clean-data.ts` turns that into one SQL transaction.
+- **Rehearsed on the live dev project, rolled back.** Migrations 0024 + 0025
+  plus the full import ran inside a transaction that rolls back: 567 products
+  (12 held as inactive), 314 serialised units, 591 opening-balance movements,
+  164 review items, **0 negative holdings**.
+- **Migration 0024** adds what the club asked for:
+  - `products.ownership` (owned / on loan to the club / mixed)
+  - `products.criticality` (critical / standard / expendable)
+  - a per-unit `asset_units` register
+  - procurement fields
+  - a `procurement` role
+- **Migration 0025** adds the review queue (`review_items`) and lets
+  procurement stocktake the store and robots.
+- **Nothing is confirmed by the people who run the store yet.**
+  - Every judgement call from the clean-up becomes a review item: 1 blocker,
+    127 checks, 36 info (the 141 flags, plus one check per held loan).
+  - Reviewers work in `/admin/review` and the product pages, not in CSVs.
+- **The legacy app's numbers can't be trusted blind.**
+  - It replaced every non-numeric or blank quantity, and every not-yet-bought
+    BOM line, with an invented **100** (100 rows).
+  - It copied stale referee-system totals instead of counting the unit register.
 - **Safety: 9 of 10 TB47S packs are recorded swollen or bad.** Quarantine them.
 
-`data/` is gitignored because the package contains member emails. Share it with
-reviewers directly, not through the repo.
+`data/` is gitignored because the package contains member emails.
 
 ---
 
@@ -45,43 +52,44 @@ reviewers directly, not through the repo.
 
 **Total quantity:** the first of these that applies.
 
-1. The unit register count, excluding disposed/missing units, for anything that has a register.
+1. The unit register count, excluding disposed/missing units, for anything with a register.
 2. The legacy app total, unless it's one of the invented 100s.
 3. The High Value / Referee summary.
 4. Electrical Parts storage + outside.
-5. The sum of Robot-Specific View counts, for things with no stock record at all (mecanum wheels, Dev Board A).
+5. The sum of Robot-Specific View counts, for things with no stock record at
+   all (mecanum wheels, Dev Board A).
 
-Level-only stock (`a lot`, `>50`, `3 sticks`) never gets a number. It is tier
-`loose` with no opening balance.
+Level-only stock (`a lot`, `>50`, `3 sticks`) never gets a number: tier `loose`,
+no opening balance.
 
 **Where it is:**
 
 - **Register items:** each unit's Allocation Tag.
   - `Storage / Unallocated` → store.
-  - `Other / Unassigned` → store, with a note for audit (73 units).
-  - `Disposed / Missing` → not in stock at all.
-- **Motors, ESCs, boards:** the Robot-Specific View. `need N` cells are shortfalls, not holdings, so they go into notes.
-- **A handful of others:** Electrical Parts remarks parsed by hand in
-  `scripts/clean-data/curation.ts` (e.g. center board 1: "8 outside, darknus").
+  - `Other / Unassigned` → store, noted for audit (73 units).
+  - `Disposed / Missing` → not in stock.
+- **Motors, ESCs, boards:** the Robot-Specific View. `need N` cells are
+  shortfalls, not holdings, and go to notes.
+- **A handful of others:** Electrical Parts remarks, parsed by hand in
+  `scripts/clean-data/curation.ts`.
 - **Store** = total − robots.
   - When robots plus open loans exceed the total (C620, C610, M2006, M3508,
     center board 2), the store is seeded with just enough that nothing goes
-    negative, and the product is flagged.
-  - The fix is a per-robot stocktake: `admin_commit_stocktake` takes a holder.
+    negative, and a review item asks for a per-robot count.
 
 **Open loans** (legacy `borrows.status = 'open'`) keep their original
-timestamps, so overdue tracking starts out correct. Expendables are imported as
-consumed. Two kinds are held instead of imported:
+timestamps, so overdue tracking starts correct. Expendables are imported as
+consumed. Two kinds become review items instead of being imported:
 
-- A burst of 20 checkouts by one account in 7 minutes at 2am. That is a
-  competition pack-out or a test of the old app, not 20 personal loans.
-- Any single loan of 3+ critical parts, which is probably on a robot.
+- A burst of 20 checkouts by one account in 7 minutes at 2am (a pack-out or
+  a test of the old app).
+- Any single loan of 3+ critical parts (probably on a robot).
 
 Result: 9 imported, 23 held.
 
-## Schema additions (migration 0024)
+## Schema additions
 
-### Criticality: "how hard do we chase this?"
+### Criticality (0024): "how hard do we chase this?"
 
 | Value | Meaning | Tier | Returnable | Examples | Products |
 |---|---|---|---|---|---|
@@ -89,61 +97,62 @@ Result: 9 imported, 23 held.
 | `standard` | Reusable kit that should come back | asset | yes | Tools, dev boards, buck converters, center boards, Snail 2305 | 57 |
 | `expendable` | The "don't care" pile | bulk / loose | no | Passives, connectors, cables, crimps, tape | 444 |
 
-It is independent of `tier` on purpose. `tier` only drives counting UX, and a
-soldering iron and a Jetson are both `asset`.
+It is independent of `tier`, which only drives counting UX. On the product page,
+changing criticality sets the matching tier and returnable, which stay editable.
 
-### Ownership: "is this ours?"
+### Ownership (0024): "is this ours?"
 
 `owned` (default), `on_loan` (lent *to* the club; it has to go back) or
-`mixed`, plus `loaned_from` and `loan_due`.
-
-It is named "on loan", not "borrowed", because borrow already means a member
-checking something out.
+`mixed`, plus `loaned_from` and `loan_due`. It is not called "borrowed" because
+borrow already means a member checkout.
 
 The sheets record exactly three loans:
 
-- Jetson AGX Thor (Advantech, Sep 2025)
-- one Jetson AGX Orin (Samuel, Feb 2024)
+- Jetson AGX Thor (Advantech)
+- one Jetson AGX Orin (Samuel)
 - one OAK-D Lite (Huimin)
 
 Everything else is assumed owned. **This is the assumption reviewers are most
-likely to overturn**, because the sheet never asked.
+likely to overturn.**
 
-### `asset_units`: the per-unit register
+### `asset_units` (0024)
 
 One row per physical unit: component ID (the sticker), serial, condition,
-per-unit ownership, last-seen location, last-checked date. 314 units: 231 ok,
-49 unknown, 30 faulty, 3 disposed, 1 missing.
+per-unit ownership, last seen, last checked. 314 units: 231 ok, 49 unknown, 30
+faulty, 3 disposed, 1 missing. It is a register, **not a ledger**: there is no
+holder column, because where stock is lives only in `stock_movements`.
 
-It is a register, **not a second ledger**. There is deliberately no holder
-column: where stock is still lives only in `stock_movements`, per product. A
-holder column maintained by hand would drift from the ledger within weeks.
+### `review_items` (0025)
+
+One row per open question, optionally linked to a product.
+
+- **Severity:** `blocker` / `check` / `info`.
+- **Status:** `open`, then `resolved` or `dismissed`, with a note.
+- **Who closed it and when** is stamped by a trigger from the signed-in session.
 
 ### Roles
 
 | | member | procurement | admin |
 |---|---|---|---|
 | Borrow / return in the Mini App | ✓ | ✓ | ✓ |
-| Read products, holdings, movements, units | — | ✓ | ✓ |
-| Add / edit products, locations, units | — | ✓ | ✓ |
+| Read products, holdings, movements, units, review queue | — | ✓ | ✓ |
+| Add / edit products, locations, units; resolve review items | — | ✓ | ✓ |
 | Receive stock (`admin_restock`) | — | ✓ | ✓ |
-| Stocktake, reversals, scan codes, members & roles, bind queue | — | — | ✓ |
+| Stocktake the store or a robot | — | ✓ | ✓ |
+| Stocktake a member's holder, reverse movements, scan codes, members & roles, bind queue | — | — | ✓ |
 
-Admins are the developers.
+Admins are the developers. Reviewers get `procurement`. The `/admin` nav hides
+admin-only pages from procurement, but that is cosmetic; RLS is the boundary.
 
 `scripts/sql/rehearse-0024-rls.sql` checks each role as `authenticated` with a
-forged JWT email, the way PostgREST would, then rolls back. It passed on the
-live project:
+forged JWT email, then rolls back. It passes on the live project:
 
-- **procurement** reads all products, sees only its own member row and zero bind attempts, can restock and insert products. It is blocked from consume movements, stocktake and scan codes, and cannot promote itself.
-- **member** sees no products and cannot restock.
-- **admin** keeps stocktake and every other capability.
-
-**Not done (UI):**
-
-- `/admin` still shows every page to anyone signed in. For procurement, the admin-only pages come back empty or refuse writes: correct, but not friendly.
-- The products page doesn't show or edit criticality/ownership, and there is no page for `asset_units` yet.
-- The roster import and members page accept `procurement` already.
+- **procurement** reads products and review items and can resolve them (the
+  closer is stamped as itself). It can restock, count the store and a robot,
+  and insert products. It is blocked from counting a member's holder, reversals,
+  consume movements, scan codes and self-promotion.
+- **member** sees nothing and can do none of it.
+- **admin** keeps everything.
 
 ## Findings
 
@@ -153,8 +162,7 @@ live project:
 - **13 counted items disagree between the sheet and the legacy app**, almost all
   upward in the app. For example: XT30 straight F 19 → 99, JST 2-pin straight
   4 → 54, XT30 F-M long 14 → 114. That is consistent with an August 2026
-  connector restock recorded only in the app. The import took the app's figure;
-  verify on the shelf.
+  connector restock recorded only in the app. The import took the app's figure.
 - **27 products have sources that disagree on the total.** Worst is the referee
   system, where the summary column lags the unit register (VT12 1 vs 8, VT13
   3 vs 8, CM01 6 vs 11), while TC01, AM02, FI02 and VT02 go the other way.
@@ -173,129 +181,119 @@ live project:
 **Duplicates**
 
 - **Every piece of RoboMaster hardware is counted twice.** The Electrical Parts
-  "Assembled parts" rows (M3508, C620, Jetsons, DR16, LiDAR, RealSense…)
-  duplicate the High Value Items tab. Merged into one product each.
-- **"Battery old/new" (17, 8) and "Old/New controller" (6, 7)** almost certainly
-  double-count the TB47S/TB48S and NDJ6/DT7 registers. Held.
-- **Legacy app:** DM3519 entered twice (41 each), then DM3520 at 41 a minute later
-  (held). PM02 entered twice.
-- **Sheet rows:** R294 and R295 are byte-identical; R276 and R345 are the same part (10 vs 9).
-- **Unit register:** component IDs PM02-10/11/12 are used twice (the second set is
-  renamed PM02-19/20/21 and needs relabelling), and two serials each appear on
-  two units.
+  "Assembled parts" rows duplicate the High Value Items tab. Merged into one
+  product each.
+- **"Battery old/new" and "Old/New controller"** almost certainly double-count
+  the TB47S/TB48S and NDJ6/DT7 registers. Held.
+- **Legacy app:** DM3519 entered twice (41 each), then DM3520 at 41 a minute
+  later (held). PM02 entered twice.
+- **Sheet rows:** R294 = R295; R276 and R345 are the same part.
+- **Unit register:** PM02-10/11/12 are used twice (renamed PM02-19/20/21; relabel),
+  and two serials each appear on two units.
 
 **Misfiled and mislabelled**
 
 - **Resistor book:** 3Ω and 3.6Ω rows sit inside the kΩ run (read as 3kΩ and
   3.6kΩ); 5.5kΩ (7.5kΩ) and 31Ω (30Ω) aren't E24 values.
 - **Parts named wrongly:** capacitors labelled as resistors (R342–344). "3m" and
-  "4m" resistors are read as milliohm current-sense shunts, not megohm. The
-  2N7000 is a MOSFET, not a BJT.
-- **Legacy app quirks:** it filed every tool under SMD, and imported the "Tools"
-  section header as a product.
+  "4m" resistors are read as milliohm current-sense shunts. The 2N7000 is a
+  MOSFET, not a BJT.
+- **Legacy app quirk:** it filed every tool under SMD and imported the "Tools"
+  header as a product.
 
 **Unidentifiable (held):** `402`, `422`, `X pulse`, `X hx0089b`, "Power delivery
 thingy", "Load resistor big", "Sparkfun opamp".
 
 **Condition and safety**
 
-- **TB47S: 9 of 10 recorded swollen or bad.** Swollen LiPo packs are a fire
-  risk; imported as faulty.
-- **Gone:** 3 TB48S destroyed in Mar 2025 aerial testing; 1 AM02 missing since 2023.
+- **TB47S: 9 of 10 recorded swollen or bad.** Imported as faulty.
+- **Gone:** 3 TB48S destroyed in Mar 2025; 1 AM02 missing since 2023.
 - **Reported faulty in the legacy app, units unidentified:** 2 VT03 and 2 AM12.
-- **Jetson Orin NX:** the one labelled unit is recorded killed by overvoltage
-  (Jul 2026). A second was written off, possibly in the same incident logged twice.
+- **Jetson Orin NX:** the labelled unit is recorded killed by overvoltage (Jul
+  2026). A second was written off, possibly the same incident logged twice.
 
 **People**
 
-- **No legacy account has a name or a Telegram handle**, only an email. Nobody
-  can bind until the club roster supplies them.
+- **No legacy account has a name or a Telegram handle**, only an email.
 - **11 accounts were `admin` in the legacy app.** All are proposed as `member`
-  except the developer, who is proposed as `admin`.
+  except the developer.
 
-**Procurement backlog:** `bom_lines.csv` has 68 lines:
+**Procurement backlog:** `bom_lines.csv` has 68 lines. 52 v2 supercap
+controller parts come with MPN, description and quantity per build; 10 have a
+quantity but no part number; 6 capacitor-bank parts have no quantity. They are
+not in the database yet.
 
-- 52 parts for the v2 supercap controller, each with MPN, a decoded description
-  and quantity per build.
-- 10 lines with a quantity but no part number.
-- 6 capacitor-bank parts with no quantity.
+## How the review works
 
-None of these are products, because nothing is on the shelf.
+After the import, reviewers sign in to `/admin` with a `procurement` account.
 
-## The review package (`data/clean/`)
+1. **Review** (`/admin/review`) lists every open item, blockers first.
+   Reviewers can filter by severity, topic or text. Each item links to its
+   product.
+2. **On the product page**, reviewers:
+   - read the product's open review items
+   - see where every unit is on the ledger
+   - fix details: name, category, criticality, ownership and lender, supplier,
+     cost, location, active
+   - edit its individual units (serial, condition, per-unit loan)
+3. **Wrong quantity?** Count it in **Stocktake**, either a store shelf or a
+   robot (robot counts can add parts the ledger doesn't list). Quantities are
+   never typed over. A count writes a correction an admin can see and reverse.
+4. **Resolve** the review item with a note saying what was found. **Dismiss**
+   only when the item itself is wrong.
+5. **Held products** are imported **inactive**. Check them, fix them, switch them
+   to active, then count them in: they start with no stock.
+6. **New items:** create them in **Products**, then receive the quantity in
+   **Restock**.
 
-| File | What it is | Reviewer's job |
-|---|---|---|
-| `review_flags.csv` | Every assumption and discrepancy, blocker → check → info | Work through it top to bottom |
-| `products.csv` | 567 products with `action` (import / hold), each source's quantity side by side, the basis used, previous names | Fix names, category, criticality, ownership; set `action` |
-| `opening_balances.csv` | The ledger seed: qty per product per holder | **This decides stock**, not `products.qty_total` |
-| `asset_units.csv` | 314 units | Condition, ownership, serials |
-| `open_loans.csv` | 32 open legacy loans with `action` | Confirm or release the held ones |
-| `members.csv` | 40 accounts, in the `/admin/members` roster format plus two review columns | Real names, Telegram handles, roles |
-| `holders.csv`, `locations.csv` | Robots and places | Rename or merge |
-| `bom_lines.csv` | Procurement backlog | Procurement |
+The `/admin/products` list shows criticality, ownership, in-store and out
+quantities, and open review counts. It filters on all of them, including
+"needs review".
 
-Suggested order:
-
-1. The blocker and safety items.
-2. The `hold` rows.
-3. Roles.
-4. Over-allocated and totals-disagree items (walk the robots).
-5. Sheet-vs-app differences (walk the shelves).
-6. Ownership of every critical item.
-7. Everything else.
-
-**After review, only re-run the importer, never `build.ts`.** The build refuses
-to overwrite `data/clean/` without `--force`, because overwriting discards the
-edits.
-
-## Importing
+## Importing into the new project
 
 ```bash
-# 0. Build the package (once, before review starts)
+# 0. The package (once): data/clean/
 npx tsx scripts/clean-data/build.ts
 
-# 1. Rehearse against the linked project -- always rolls back
-npx tsx scripts/import-clean-data.ts --rehearse --with-migration
-supabase db query --linked -f data/clean/import.rehearse.sql   # expect "IMPORT REHEARSAL OK"
+# 1. Schema into the NEW project (a scratch link; this checkout stays linked to dev)
+npx tsx scripts/provision-project.ts --project-ref <new-ref> --dry-run
+npx tsx scripts/provision-project.ts --project-ref <new-ref>
 
-# 2. Apply migration 0024 (not `db push`: see tele-qr/checkpoint.md), record it in
-#    supabase_migrations.schema_migrations as for 0015-0023, then regenerate
-#    src/lib/types/database.ts -- 0024's types were added by hand
-supabase db query --linked -f supabase/migrations/0024_catalog_import_ownership_criticality_roles.sql
-
-# 3. Import
+# 2. Rehearse the import against it (always rolls back), then apply
+npx tsx scripts/import-clean-data.ts --rehearse
+npx tsx scripts/provision-project.ts --project-ref <new-ref> --run data/clean/import.rehearse.sql
 npx tsx scripts/import-clean-data.ts
-supabase db query --linked -f data/clean/import.sql
+npx tsx scripts/provision-project.ts --project-ref <new-ref> --run data/clean/import.sql
+
+# 3. Accounts: keys for the new project in .env.production.local (never .env.local)
+ENV_FILE=.env.production.local npx tsx scripts/bootstrap-admin.ts
+#    then, per reviewer: add them in /admin/members with role "procurement" and
+#    their email, and give them a password:
+ENV_FILE=.env.production.local npx tsx scripts/create-admin-user.ts <email> <password>
 ```
 
-`supabase db query -f` runs a file as a single transaction: an error anywhere
-rolls back everything, including DDL. That was verified before relying on it,
-and it is what makes the rehearsals safe.
+Notes:
 
-Things to know before running the real import:
-
-- **Import into a database without the dev fixtures.** Otherwise fixture
-  products named `M3508`, `GM6020` and `Terminal crimps` sit next to the real
-  ones, and fixture robots `Engineer` and `Standard` linger as borrow
-  destinations.
-- **Holders, members and locations are reused by name or email.** A second
-  import is refused.
-- **Admin login needs a matching email.** Staff sign in to `/admin` only if
-  their Supabase Auth email equals `members.nus_email`. The legacy emails are
-  personal Gmail addresses.
-- **One imported loan is already overdue**: a PM02 out since 7 Aug 2026. Its
-  borrower will be nudged once they bind.
+- **`supabase db query -f` runs a file as a single transaction**: an error
+  anywhere rolls back everything, including DDL. That was verified before
+  relying on it.
+- **Types:** `src/lib/types/database.ts` has 0024/0025 added by hand.
+  Regenerate from the new project once it is provisioned.
+- **Going live:** point Vercel's Supabase env vars at the new project. The dev
+  project stays for integration tests and fixtures.
+- **Admin login needs a matching email.** Staff sign in only if their Supabase
+  Auth email equals `members.nus_email`.
+- **One imported loan is already overdue** (a PM02 out since 7 Aug 2026).
 
 ## Open questions
 
 - Which critical items are actually borrowed from other departments or clubs?
   The sheets only ever recorded three loans.
-- Who is procurement, and who else is admin?
+- Who else is admin, and who reviews as procurement?
 - Are the 13 M3508 flywheel motors part of the 64, or extra?
 - Is S$150 the right line for `critical`?
 - What is the "UV charger", who or what is "Hopps", and should the four DarkSTDs
   be one holder or four?
-- Should critical items eventually be scanned per unit (component ID on the
-  sticker) rather than per product? Today the ledger is per product, and
-  `asset_units` only records identity and condition.
+- Should the procurement backlog (`bom_lines.csv`) live in the dashboard too?
+- Should critical items eventually be scanned per unit rather than per product?

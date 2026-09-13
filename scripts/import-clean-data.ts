@@ -1,23 +1,30 @@
 /**
- * Turns the reviewed data set in data/clean/ into ONE SQL transaction.
+ * Turns the cleaned data set in data/clean/ into ONE SQL transaction.
  *
  *   npx tsx scripts/import-clean-data.ts
  *       validate, then write data/clean/import.sql
  *   npx tsx scripts/import-clean-data.ts --rehearse [--with-migration]
  *       write data/clean/import.rehearse.sql, which runs every statement and
  *       then raises an exception reporting row counts -- so running it
- *       against a real database changes nothing. --with-migration puts
- *       migration 0024 inside the same transaction, for a database that does
- *       not have it yet.
+ *       against a real database changes nothing. --with-migration puts the
+ *       catalog migrations (0024, 0025) inside the same transaction, for a
+ *       database that does not have them yet.
  *
  * Apply with the Supabase CLI (`supabase db push` does not work from here,
  * see docs/tele-qr/checkpoint.md):
  *
  *   supabase db query --linked -f data/clean/import.sql
  *
- * Only rows with action=import are loaded. The CSVs are the source of truth
- * after SME review: opening_balances.csv decides the ledger, the qty columns
- * in products.csv are for reading. This script never connects to a database.
+ * What lands:
+ *   - action=import products, active; action=hold products, INACTIVE, so a
+ *     reviewer can check and switch them on from /admin; action=drop, nothing
+ *   - units, robot holders, locations, members
+ *   - opening balances as `seed` movements, and open legacy loans with their
+ *     original timestamps
+ *   - every row of review_flags.csv, plus one per held loan, as review_items:
+ *     the dashboard's review queue
+ *
+ * This script never connects to a database.
  */
 
 import { randomUUID } from "node:crypto";
@@ -31,8 +38,12 @@ import { normalizeTelegramHandle } from "../src/lib/utils/normalize";
 import { OPENING_BALANCE_AT } from "./clean-data/curation";
 
 export const CLEAN_DIR = "data/clean";
-const MIGRATION = "supabase/migrations/0024_catalog_import_ownership_criticality_roles.sql";
+export const CATALOG_MIGRATIONS = [
+  "supabase/migrations/0024_catalog_import_ownership_criticality_roles.sql",
+  "supabase/migrations/0025_review_queue_and_staff_stocktake.sql",
+];
 export const LEGACY_SESSION_NOTE = "Imported from the legacy checkout app";
+const REVIEW_SOURCE = "catalog clean-up (data/clean)";
 
 type Row = Record<string, string>;
 
@@ -43,6 +54,7 @@ const UNIT_OWNERSHIP = ["owned", "on_loan"];
 const CONDITIONS = ["ok", "faulty", "disposed", "missing", "unknown"];
 const ROLES = ["member", "procurement", "admin"];
 const MOVEMENTS = ["borrow", "consume"];
+const SEVERITIES = ["blocker", "check", "info"];
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function readCleanTable(dir: string, file: string): Row[] {
@@ -79,7 +91,7 @@ export interface ImportPlan {
   counts: Record<string, number>;
 }
 
-export function buildImport(dir: string, options: { rehearse: boolean; migrationSql: string | null }): ImportPlan {
+export function buildImport(dir: string, options: { rehearse: boolean; migrationSqls: string[] }): ImportPlan {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -90,15 +102,13 @@ export function buildImport(dir: string, options: { rehearse: boolean; migration
   const holders = readCleanTable(dir, "holders.csv");
   const locations = readCleanTable(dir, "locations.csv");
   const members = readCleanTable(dir, "members.csv");
-
-  const knownProductKeys = new Set(products.map((p) => p.key));
-  const skipOrError = (where: string, key: string, what: string) => {
-    if (knownProductKeys.has(key)) warnings.push(`${where}: product ${key} is not action=import; ${what} skipped`);
-    else errors.push(`${where}: unknown product ${key}`);
-  };
+  const flags = readCleanTable(dir, "review_flags.csv");
 
   // --- products ------------------------------------------------------------
-  const imported = new Map<string, Row>();
+  /** Everything that will exist in the database (import + hold). */
+  const loaded = new Map<string, Row>();
+  /** The subset that is live: only these may carry stock, units or loans. */
+  const active = new Set<string>();
   const seenKeys = new Set<string>();
   for (const p of products) {
     const where = `products.csv ${p.key || "(no key)"}`;
@@ -108,8 +118,11 @@ export function buildImport(dir: string, options: { rehearse: boolean; migration
     }
     if (seenKeys.has(p.key)) errors.push(`${where}: duplicate key`);
     seenKeys.add(p.key);
-    if (!["import", "hold", "drop"].includes(p.action)) errors.push(`${where}: action must be import, hold or drop`);
-    if (p.action !== "import") continue;
+    if (!["import", "hold", "drop"].includes(p.action)) {
+      errors.push(`${where}: action must be import, hold or drop`);
+      continue;
+    }
+    if (p.action === "drop") continue;
 
     if (!p.name) errors.push(`${where}: name is empty`);
     if (!TIERS.includes(p.tier)) errors.push(`${where}: tier "${p.tier}" is not one of ${TIERS.join("/")}`);
@@ -125,11 +138,18 @@ export function buildImport(dir: string, options: { rehearse: boolean; migration
         errors.push(`${where}: spec_json is not valid JSON`);
       }
     }
-    imported.set(p.key, p);
+    loaded.set(p.key, p);
+    if (p.action === "import") active.add(p.key);
   }
 
+  const notActive = (where: string, key: string, what: string) => {
+    if (loaded.has(key)) warnings.push(`${where}: product ${key} is held (inactive); ${what} skipped`);
+    else if (seenKeys.has(key)) warnings.push(`${where}: product ${key} is dropped; ${what} skipped`);
+    else errors.push(`${where}: unknown product ${key}`);
+  };
+
   const locationNames = new Set(locations.map((l) => l.name).filter(Boolean));
-  for (const p of imported.values()) {
+  for (const p of loaded.values()) {
     if (p.location && !locationNames.has(p.location)) {
       locationNames.add(p.location);
       warnings.push(`products.csv ${p.key}: location "${p.location}" is not in locations.csv; it will be created`);
@@ -164,8 +184,8 @@ export function buildImport(dir: string, options: { rehearse: boolean; migration
   const unitRows: Row[] = [];
   for (const u of units) {
     const where = `asset_units.csv ${u.unit_code || "(no code)"}`;
-    if (!imported.has(u.product_key)) {
-      skipOrError(where, u.product_key, "unit");
+    if (!active.has(u.product_key)) {
+      notActive(where, u.product_key, "unit");
       continue;
     }
     if (!u.unit_code) errors.push(`${where}: unit_code is empty`);
@@ -185,8 +205,8 @@ export function buildImport(dir: string, options: { rehearse: boolean; migration
   const balanceRows: Row[] = [];
   for (const b of balances) {
     const where = `opening_balances.csv ${b.product_key} @ ${b.holder_name}`;
-    if (!imported.has(b.product_key)) {
-      skipOrError(where, b.product_key, "balance");
+    if (!active.has(b.product_key)) {
+      notActive(where, b.product_key, "balance");
       continue;
     }
     const qty = Number(b.qty);
@@ -212,11 +232,15 @@ export function buildImport(dir: string, options: { rehearse: boolean; migration
   // --- open loans ----------------------------------------------------------
   const loanedOut = new Map<string, number>();
   const loanRows: Row[] = [];
+  const heldLoans: Row[] = [];
   for (const l of loans) {
-    if (l.action !== "import") continue;
     const where = `open_loans.csv ${l.legacy_borrow_id.slice(0, 8)}`;
-    if (!imported.has(l.product_key)) {
-      skipOrError(where, l.product_key, "loan");
+    if (l.action !== "import") {
+      heldLoans.push(l);
+      continue;
+    }
+    if (!active.has(l.product_key)) {
+      notActive(where, l.product_key, "loan");
       continue;
     }
     if (!memberEmails.has(l.member_email.toLowerCase())) {
@@ -232,7 +256,8 @@ export function buildImport(dir: string, options: { rehearse: boolean; migration
   }
 
   // --- cross-file consistency ----------------------------------------------
-  for (const [key, p] of imported) {
+  for (const key of active) {
+    const p = loaded.get(key)!;
     const out = loanedOut.get(key) ?? 0;
     const store = storeSeed.get(key) ?? 0;
     if (out > store) {
@@ -244,13 +269,52 @@ export function buildImport(dir: string, options: { rehearse: boolean; migration
     }
   }
 
+  // --- review queue --------------------------------------------------------
+  const productKeyByName = new Map([...loaded.values()].map((p) => [p.name, p.key]));
+  const productKeyByUnit = new Map(units.map((u) => [u.unit_code, u.product_key]));
+  const reviewKey = (entity: string, key: string, name: string): string | null => {
+    if (entity === "product" && loaded.has(key)) return key;
+    if (entity === "unit") {
+      const viaUnit = productKeyByUnit.get(key.split(",")[0].trim());
+      if (viaUnit && loaded.has(viaUnit)) return viaUnit;
+    }
+    return productKeyByName.get(name) ?? null;
+  };
+
+  const reviewRows: { severity: string; entity: string; subject: string; productKey: string | null; issue: string }[] = [];
+  for (const f of flags) {
+    if (!SEVERITIES.includes(f.severity)) {
+      errors.push(`review_flags.csv "${f.issue.slice(0, 40)}": severity "${f.severity}" is not one of ${SEVERITIES.join("/")}`);
+      continue;
+    }
+    if (!f.issue) continue;
+    reviewRows.push({
+      severity: f.severity,
+      entity: f.entity || "other",
+      subject: f.name || f.key || "(unnamed)",
+      productKey: reviewKey(f.entity, f.key, f.name),
+      issue: f.issue,
+    });
+  }
+  for (const l of heldLoans) {
+    reviewRows.push({
+      severity: "check",
+      entity: "loan",
+      subject: l.product_name,
+      productKey: loaded.has(l.product_key) ? l.product_key : null,
+      issue:
+        `Legacy app: ${l.member_legacy_name} has ${l.qty} out since ${l.borrowed_at.slice(0, 10)}. Not imported. ${l.notes} ` +
+        "If it really is out, have them borrow it in the Mini App (or count it onto the robot in Stocktake); otherwise resolve this.",
+    });
+  }
+
   // --- SQL -----------------------------------------------------------------
   const sql: string[] = [
     `-- Generated by scripts/import-clean-data.ts from ${CLEAN_DIR}/. Regenerate rather than edit.`,
     "-- One transaction: all of it lands, or none of it.",
     "begin;",
   ];
-  if (options.migrationSql) sql.push("", "-- Migration 0024 (rehearsal only).", options.migrationSql);
+  for (const migration of options.migrationSqls) sql.push("", "-- Catalog migration (rehearsal only).", migration);
 
   sql.push(
     "",
@@ -259,6 +323,9 @@ export function buildImport(dir: string, options: { rehearse: boolean; migration
     "  if not exists (select 1 from information_schema.columns",
     "                  where table_schema = 'public' and table_name = 'products' and column_name = 'criticality') then",
     "    raise exception 'migration 0024 is not applied to this database';",
+    "  end if;",
+    "  if to_regclass('public.review_items') is null then",
+    "    raise exception 'migration 0025 is not applied to this database';",
     "  end if;",
     "  if exists (select 1 from products where legacy_ref like 'clean:%') then",
     "    raise exception 'data/clean has already been imported into this database';",
@@ -310,13 +377,15 @@ export function buildImport(dir: string, options: { rehearse: boolean; migration
     );
   }
 
-  sql.push("", "-- Products");
+  sql.push("", "-- Products (held ones inactive, for a reviewer to switch on)");
   const productIds = new Map<string, string>();
-  for (const p of imported.values()) {
+  for (const p of loaded.values()) {
     const id = randomUUID();
     productIds.set(p.key, id);
+    const held = !active.has(p.key);
+    const notes = held ? `Held during the catalog clean-up: see the review queue. ${p.notes}`.trim() : p.notes;
     sql.push(
-      "insert into products (id, name, tier, category, location_id, returnable, unit, part_number, spec, notes, criticality, ownership, loaned_from, legacy_ref) values (" +
+      "insert into products (id, name, tier, category, location_id, returnable, unit, part_number, spec, notes, criticality, ownership, loaned_from, active, legacy_ref) values (" +
         [
           sqlText(id),
           sqlText(p.name),
@@ -327,10 +396,11 @@ export function buildImport(dir: string, options: { rehearse: boolean; migration
           sqlText(p.unit),
           sqlText(p.part_number),
           p.spec_json ? sqlText(p.spec_json, "::jsonb") : "null",
-          sqlText(p.notes),
+          sqlText(notes),
           sqlText(p.criticality),
           sqlText(p.ownership),
           sqlText(p.loaned_from),
+          held ? "false" : "true",
           sqlText(`clean:${p.key}; ${p.sources}`),
         ].join(", ") +
         ");",
@@ -402,6 +472,26 @@ export function buildImport(dir: string, options: { rehearse: boolean; migration
     );
   }
 
+  if (reviewRows.length) {
+    sql.push(
+      "",
+      "-- Review queue",
+      "insert into review_items (severity, entity, subject, product_id, issue, source) values",
+      values(
+        reviewRows.map((r) =>
+          [
+            sqlText(r.severity),
+            sqlText(r.entity),
+            sqlText(r.subject),
+            r.productKey ? sqlText(productIds.get(r.productKey), "::uuid") : "null::uuid",
+            sqlText(r.issue),
+            sqlText(REVIEW_SOURCE),
+          ].join(", "),
+        ),
+      ) + ";",
+    );
+  }
+
   if (options.rehearse) {
     sql.push(
       "",
@@ -409,13 +499,16 @@ export function buildImport(dir: string, options: { rehearse: boolean; migration
       "do $$",
       "declare v_report text;",
       "begin",
-      "  select format('products=%s asset_units=%s robot_holders=%s members=%s seed_movements=%s loan_sessions=%s negative_holdings=%s qty_in_store=%s qty_out=%s',",
+      "  select format('products=%s (inactive %s) asset_units=%s robot_holders=%s members=%s seed_movements=%s loan_sessions=%s review_items=%s (linked to a product %s) negative_holdings=%s qty_in_store=%s qty_out=%s',",
       "    (select count(*) from products where legacy_ref like 'clean:%'),",
+      "    (select count(*) from products where legacy_ref like 'clean:%' and not active),",
       "    (select count(*) from asset_units),",
       "    (select count(*) from holders where kind = 'robot' and active),",
       "    (select count(*) from members),",
       `    (select count(*) from stock_movements where reason = 'seed' and created_at = ${sqlText(OPENING_BALANCE_AT)}::timestamptz),`,
       `    (select count(*) from sessions where note like ${sqlText(`${LEGACY_SESSION_NOTE}%`)}),`,
+      `    (select count(*) from review_items where source = ${sqlText(REVIEW_SOURCE)}),`,
+      `    (select count(*) from review_items where source = ${sqlText(REVIEW_SOURCE)} and product_id is not null),`,
       "    (select count(*) from holdings h join holders hd on hd.id = h.holder_id where hd.kind in ('store', 'robot', 'member') and h.qty < 0),",
       "    (select coalesce(sum(qty_in_store), 0) from stock_summary),",
       "    (select coalesce(sum(qty_out), 0) from stock_summary)",
@@ -435,10 +528,12 @@ export function buildImport(dir: string, options: { rehearse: boolean; migration
       locations: locationNames.size,
       robotHolders: robotNames.size,
       members: memberRows.length,
-      products: imported.size,
+      products: loaded.size,
+      heldProducts: loaded.size - active.size,
       assetUnits: unitRows.length,
       openingBalances: balanceRows.length,
       loans: loanRows.length,
+      reviewItems: reviewRows.length,
     },
   };
 }
@@ -457,13 +552,13 @@ if (isMain) {
   const rehearse = args.has("--rehearse");
   const withMigration = args.has("--with-migration");
   if (withMigration && !rehearse) {
-    console.error("--with-migration is only for --rehearse. Apply 0024 as a migration first.");
+    console.error("--with-migration is only for --rehearse. Apply 0024 and 0025 as migrations first.");
     process.exit(1);
   }
 
   const plan = buildImport(CLEAN_DIR, {
     rehearse,
-    migrationSql: withMigration ? readFileSync(MIGRATION, "utf-8") : null,
+    migrationSqls: withMigration ? CATALOG_MIGRATIONS.map((file) => readFileSync(file, "utf-8")) : [],
   });
   for (const warning of plan.warnings) console.warn(`warning: ${warning}`);
   if (plan.errors.length) {

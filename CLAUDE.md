@@ -66,6 +66,14 @@ init-data HMAC verification) and need no network.
   `data/clean/` and writes one SQL transaction. A `--rehearse` file ends in
   `raise exception`, so `supabase db query --linked -f` runs it and rolls
   everything back. See `docs/data-cleaning.md`.
+- `provision-project.ts --project-ref <ref> [--dry-run] [--run file.sql]` —
+  applies every migration, recorded in `schema_migrations`, to a **new**
+  project through a scratch workdir link, then optionally runs a SQL file
+  (e.g. the import). This checkout stays linked to dev, and the script refuses
+  the dev ref.
+- Any script can target another project with `ENV_FILE=.env.production.local`.
+  `_env.ts` fails loudly if the named file is missing, rather than falling
+  back to dev.
 - `create-admin-user.ts` — bootstraps a Supabase Auth user for `/admin`.
 - `dev-mock-init-data.ts <telegram_user_id>` — prints a signed mock Telegram
   `initData` string for local dev/testing without a real Telegram client (used

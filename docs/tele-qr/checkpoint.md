@@ -124,9 +124,20 @@ continuous-scan gate (§0) must pass **before any labels are printed**.
   role) and the full import were run against the live project, rolled back:
   555 products, 314 units, 0 negative holdings. **Neither is applied.**
 
-What's left is human work: SME review of `data/clean/review_flags.csv`
-(1 blocker, 104 checks), real names and Telegram handles for the roster, and
-deciding who is procurement.
+**Decided 2026-09-13:** the real data goes into a **new Supabase project**. The
+current one stays dev and test. Reviewers get `procurement` accounts and review
+**in `/admin`**, not in CSVs:
+
+- migration `0025` adds the review queue and procurement stocktake
+- `/admin/review` lists the queue
+- product pages show review items, holdings and units
+- Stocktake can count a robot
+
+`scripts/provision-project.ts` loads the schema and runs the import against a
+project ref without re-linking dev.
+
+Still waiting on: the new project to be created, real names and Telegram
+handles for the roster, and deciding who is procurement.
 
 ### 3. "Failed submits" is on the observability list and is not buildable
 A failed submit never reaches the database and the cart is client state with

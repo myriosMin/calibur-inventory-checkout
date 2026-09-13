@@ -275,6 +275,66 @@ export type Database = {
           },
         ]
       }
+      review_items: {
+        Row: {
+          created_at: string
+          entity: string
+          id: number
+          issue: string
+          product_id: string | null
+          resolution_note: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          severity: string
+          source: string | null
+          status: string
+          subject: string
+        }
+        Insert: {
+          created_at?: string
+          entity: string
+          id?: number
+          issue: string
+          product_id?: string | null
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity: string
+          source?: string | null
+          status?: string
+          subject: string
+        }
+        Update: {
+          created_at?: string
+          entity?: string
+          id?: number
+          issue?: string
+          product_id?: string | null
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity?: string
+          source?: string | null
+          status?: string
+          subject?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "review_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "review_items_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       scan_codes: {
         Row: {
           active: boolean

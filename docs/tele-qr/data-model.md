@@ -327,6 +327,12 @@ Added for the real catalog import. Details and the reasoning are in
   per-unit ownership). It is a register, not a ledger, and has no holder
   column: where stock is still lives only in `stock_movements`.
 - `members.role` is widened to `member | procurement | admin`.
+- `review_items` (0025): the review queue for the catalog go-live. Each row
+  carries a severity, an optional product link, and a status of `open`,
+  `resolved` or `dismissed` with a note. A trigger stamps who closed it from
+  the session.
+- 0025 also lets procurement stocktake the store or a robot. Counting a
+  member's holder and reversing movements stay admin-only.
 
 ## Access control
 
