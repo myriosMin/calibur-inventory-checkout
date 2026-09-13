@@ -1,5 +1,12 @@
 # Catalog Migration
 
+> **Status (2026-09-13):** steps 1–3 and 5–6 below are implemented in
+> `scripts/clean-data/` and `scripts/import-clean-data.ts`, working from the
+> xlsx plus the legacy checkout app's export rather than the single CSV this
+> page describes. Step 4, the human review, is what remains. See
+> [data-cleaning.md](data-cleaning.md). Row numbers on this page are CSV
+> lines, not xlsx rows.
+
 > **Applies to both candidate approaches** — [tele-qr](tele-qr/) and
 > [face-id-and-cv](face-id-and-cv/). Whichever the committee picks, the catalog
 > work is identical and has to happen first.

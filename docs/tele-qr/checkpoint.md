@@ -23,9 +23,10 @@ Two things stand between here and real use, and neither is code:
    **PASSED (2026-09-13)** — continuous scanning is confirmed working on real
    devices, so the assumption every phase rests on holds, and label printing is
    no longer gated.
-2. **The catalog is still fixtures.** The bench-literate review pass
-   ([../catalog-migration.md](../catalog-migration.md)) is 3–5 days of human
-   work and remains the project's critical path.
+2. **The catalog is cleaned but not imported.** The real inventory is in a
+   review package (`data/clean/`, see [../data-cleaning.md](../data-cleaning.md)).
+   Migration 0024 and the import are rehearsed. The SME review is human work
+   and remains the project's critical path.
 
 ---
 
@@ -111,10 +112,21 @@ automation or physical device is available in an agent session, and the
 continuous-scan gate (§0) must pass **before any labels are printed**.
 
 ### 2. Data
-The catalog review pass and the member roster import are human work. Tooling
-exists for both (`import-catalog.ts`, `/admin/members` CSV import); the work
-itself does not. **Opening balances must be entered via `/admin/restock`** or
-holdings go negative on every borrow.
+**Cleaned and rehearsed, not imported (2026-09-13).** See
+[../data-cleaning.md](../data-cleaning.md).
+
+- `scripts/clean-data/build.ts` merges the xlsx and the legacy app export into
+  `data/clean/`. That directory is gitignored because it holds member emails.
+- `scripts/import-clean-data.ts` turns the reviewed CSVs into one SQL
+  transaction, with opening balances as `seed` movements. Hand-entering them
+  via `/admin/restock` is no longer needed.
+- Migration `0024` (ownership, criticality, `asset_units`, `procurement`
+  role) and the full import were run against the live project, rolled back:
+  555 products, 314 units, 0 negative holdings. **Neither is applied.**
+
+What's left is human work: SME review of `data/clean/review_flags.csv`
+(1 blocker, 104 checks), real names and Telegram handles for the roster, and
+deciding who is procurement.
 
 ### 3. "Failed submits" is on the observability list and is not buildable
 A failed submit never reaches the database and the cart is client state with
@@ -157,4 +169,7 @@ distinguishes them, so the report is recoverable either way); pagination on
    — club-chat alerts no-op until it is (`npx tsx scripts/get-chat-id.ts`).
 4. Bootstrap the first real admin (`npx tsx scripts/bootstrap-admin.ts`), then
    import the roster.
-5. The catalog review pass, then opening balances via `/admin/restock`.
+5. SME review of `data/clean/` ([../data-cleaning.md](../data-cleaning.md)),
+   then apply migration 0024, regenerate `src/lib/types/database.ts`, and run
+   `scripts/import-clean-data.ts`. Opening balances come in with the import;
+   no hand restock is needed.

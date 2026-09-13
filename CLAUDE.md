@@ -56,7 +56,16 @@ init-data HMAC verification) and need no network.
   across all 3 tiers, scan codes, seed movements) into the live dev project.
 - `import-catalog.ts [csvPath] [outPath]` — parses the real 538-row inventory
   CSV into a flagged review CSV (`scripts/out/catalog-review.csv`). Read-only:
-  never touches the DB. See `docs/catalog-migration.md`.
+  never touches the DB. See `docs/catalog-migration.md`. Superseded by the two
+  below, which work from the xlsx.
+- `clean-data/build.ts [--force]` — merges the xlsx and the legacy app export
+  (`data/db/*.csv`) into the SME review package `data/clean/` (gitignored:
+  member emails). Judgement calls live in `clean-data/curation.ts`. **Refuses
+  to overwrite `data/clean/` without `--force`, because reviewers edit it there.**
+- `import-clean-data.ts [--rehearse [--with-migration]]` — validates
+  `data/clean/` and writes one SQL transaction. A `--rehearse` file ends in
+  `raise exception`, so `supabase db query --linked -f` runs it and rolls
+  everything back. See `docs/data-cleaning.md`.
 - `create-admin-user.ts` — bootstraps a Supabase Auth user for `/admin`.
 - `dev-mock-init-data.ts <telegram_user_id>` — prints a signed mock Telegram
   `initData` string for local dev/testing without a real Telegram client (used
