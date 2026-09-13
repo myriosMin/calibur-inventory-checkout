@@ -29,7 +29,9 @@ import { normalizeTelegramHandle } from "@/lib/utils/normalize";
 
 import { parseCsv } from "./parse";
 
-export type MemberRole = "member" | "admin";
+/** Mirrors the DB's `members_role_check` (migration 0024). */
+export const MEMBER_ROLES = ["member", "procurement", "admin"] as const;
+export type MemberRole = (typeof MEMBER_ROLES)[number];
 
 /** The exact shape inserted into `members`. Nulls, not empty strings — the
  *  UNIQUE indexes on nus_email/telegram_username treat every '' as equal,
@@ -201,10 +203,10 @@ export function validateRosterValues(
   const rawRole = (values.role ?? "").trim().toLowerCase();
   let role: MemberRole = "member";
   if (rawRole) {
-    if (rawRole === "member" || rawRole === "admin") {
-      role = rawRole;
+    if ((MEMBER_ROLES as readonly string[]).includes(rawRole)) {
+      role = rawRole as MemberRole;
     } else {
-      errors.push(`Role must be "member" or "admin", got "${values.role?.trim()}".`);
+      errors.push(`Role must be "member", "procurement" or "admin", got "${values.role?.trim()}".`);
     }
   }
 

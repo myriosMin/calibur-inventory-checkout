@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import Button from "@/components/ui/Button";
 import Toast from "@/components/ui/Toast";
+import { MEMBER_ROLES, type MemberRole } from "@/lib/csv/member-roster";
 import { getBrowserClient } from "@/lib/supabase/browser";
 import type { Database } from "@/lib/types/database";
 import { normalizeTelegramHandle } from "@/lib/utils/normalize";
@@ -12,9 +13,9 @@ import { normalizeTelegramHandle } from "@/lib/utils/normalize";
 import MemberImport from "./MemberImport";
 
 type Member = Database["public"]["Tables"]["members"]["Row"];
-type Role = "member" | "admin";
+type Role = MemberRole;
 
-const ROLES: Role[] = ["member", "admin"];
+const ROLES: readonly Role[] = MEMBER_ROLES;
 
 const EMPTY_FORM = {
   full_name: "",
@@ -92,7 +93,7 @@ export default function AdminMembersPage() {
     }
     // Mirror the DB's `members_role_check` CHECK client-side.
     if (!ROLES.includes(form.role)) {
-      setFormError("Role must be 'member' or 'admin'.");
+      setFormError(`Role must be one of: ${ROLES.join(", ")}.`);
       return;
     }
 

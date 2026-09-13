@@ -140,9 +140,10 @@ describe("validateRosterValues — other fields", () => {
     expect(errors[0]).toContain("not a valid email");
   });
 
-  it("defaults role to member and accepts admin, case-insensitively", () => {
+  it("defaults role to member and accepts admin and procurement, case-insensitively", () => {
     expect(validateRosterValues({ full_name: "A" }).draft?.role).toBe("member");
     expect(validateRosterValues({ full_name: "A", role: "Admin" }).draft?.role).toBe("admin");
+    expect(validateRosterValues({ full_name: "A", role: "Procurement" }).draft?.role).toBe("procurement");
     expect(validateRosterValues({ full_name: "A", role: "owner" }).errors[0]).toContain("Role must be");
   });
 

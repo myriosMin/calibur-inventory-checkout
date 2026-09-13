@@ -66,7 +66,7 @@ create table members (
   telegram_username   text unique,     -- collected at club registration
   telegram_user_id    bigint unique,   -- bound on first /start; the real key
   telegram_bound_at   timestamptz,
-  role                text not null default 'member',   -- member | admin
+  role                text not null default 'member',   -- member | procurement | admin (0024)
   active              boolean not null default true,
   joined_at           date,
   left_at             date,
@@ -309,6 +309,25 @@ Committing a count writes the difference as a movement to/from `adjustment`.
 Variance history is itself a diagnostic: a part with large recurring variance is
 one people aren't logging, which points at a UX problem rather than a person.
 
+### Ownership, criticality and the unit register (migration 0024)
+
+Added for the real catalog import. Details and the reasoning are in
+[../data-cleaning.md](../data-cleaning.md).
+
+- `products.criticality`: `critical | standard | expendable`. It says how hard
+  an item is tracked, independent of `tier`.
+- `products.ownership`: `owned | on_loan | mixed`, plus `loaned_from` and
+  `loan_due`. `on_loan` means lent *to* the club by another department, club
+  or company. It is deliberately not called "borrowed", because a borrow is a
+  member checkout.
+- `products.supplier`, `products.unit_cost_sgd`: for the procurement team.
+- `products.legacy_ref`: provenance across the three spreadsheet tabs and the
+  legacy app. `legacy_row` could only point into one CSV.
+- `asset_units`: one row per serialised unit (component ID, serial, condition,
+  per-unit ownership). It is a register, not a ledger, and has no holder
+  column: where stock is still lives only in `stock_movements`.
+- `members.role` is widened to `member | procurement | admin`.
+
 ## Access control
 
 Supabase RLS:
@@ -317,6 +336,10 @@ Supabase RLS:
   which validates Telegram `initData` server-side and uses the service role.
   See [architecture.md](architecture.md).
 - Admins authenticate with Supabase email auth and can read/write everything.
+- Procurement (`is_staff()`, migration 0024) authenticates the same way. It
+  can read the inventory, maintain products, locations and units, and receive
+  stock through `admin_restock`. It cannot stocktake, reverse movements, write
+  scan codes or see members other than itself.
 - A member can read their own movements and holdings.
 - `stock_movements` is append-only for non-admins. Corrections are new rows,
   never deletes.

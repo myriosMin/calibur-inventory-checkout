@@ -18,6 +18,71 @@ export type Database = {
   }
   public: {
     Tables: {
+      asset_units: {
+        Row: {
+          active: boolean
+          condition: string
+          created_at: string
+          id: string
+          labelled: boolean | null
+          last_checked_on: string | null
+          last_seen_location: string | null
+          legacy_ref: string | null
+          loan_due: string | null
+          loaned_from: string | null
+          notes: string | null
+          ownership: string
+          product_id: string
+          serial_number: string | null
+          unit_code: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          condition?: string
+          created_at?: string
+          id?: string
+          labelled?: boolean | null
+          last_checked_on?: string | null
+          last_seen_location?: string | null
+          legacy_ref?: string | null
+          loan_due?: string | null
+          loaned_from?: string | null
+          notes?: string | null
+          ownership?: string
+          product_id: string
+          serial_number?: string | null
+          unit_code: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          condition?: string
+          created_at?: string
+          id?: string
+          labelled?: boolean | null
+          last_checked_on?: string | null
+          last_seen_location?: string | null
+          legacy_ref?: string | null
+          loan_due?: string | null
+          loaned_from?: string | null
+          notes?: string | null
+          ownership?: string
+          product_id?: string
+          serial_number?: string | null
+          unit_code?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_units_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       holders: {
         Row: {
           active: boolean
@@ -132,51 +197,72 @@ export type Database = {
           active: boolean
           category: string | null
           created_at: string
+          criticality: string
           id: string
+          legacy_ref: string | null
           legacy_row: number | null
+          loan_due: string | null
+          loaned_from: string | null
           location_id: string | null
           min_stock: number | null
           name: string
           notes: string | null
+          ownership: string
           part_number: string | null
           returnable: boolean
           spec: Json | null
+          supplier: string | null
           tier: string
           unit: string
+          unit_cost_sgd: number | null
           updated_at: string
         }
         Insert: {
           active?: boolean
           category?: string | null
           created_at?: string
+          criticality?: string
           id?: string
+          legacy_ref?: string | null
           legacy_row?: number | null
+          loan_due?: string | null
+          loaned_from?: string | null
           location_id?: string | null
           min_stock?: number | null
           name: string
           notes?: string | null
+          ownership?: string
           part_number?: string | null
           returnable?: boolean
           spec?: Json | null
+          supplier?: string | null
           tier: string
           unit?: string
+          unit_cost_sgd?: number | null
           updated_at?: string
         }
         Update: {
           active?: boolean
           category?: string | null
           created_at?: string
+          criticality?: string
           id?: string
+          legacy_ref?: string | null
           legacy_row?: number | null
+          loan_due?: string | null
+          loaned_from?: string | null
           location_id?: string | null
           min_stock?: number | null
           name?: string
           notes?: string | null
+          ownership?: string
           part_number?: string | null
           returnable?: boolean
           spec?: Json | null
+          supplier?: string | null
           tier?: string
           unit?: string
+          unit_cost_sgd?: number | null
           updated_at?: string
         }
         Relationships: [
@@ -614,6 +700,7 @@ export type Database = {
         Returns: number
       }
       is_admin: { Args: never; Returns: boolean }
+      is_staff: { Args: never; Returns: boolean }
       submit_cart: {
         Args: {
           p_client_token?: string
