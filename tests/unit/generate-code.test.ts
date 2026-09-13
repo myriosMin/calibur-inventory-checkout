@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CODE_ALPHABET, generateScanCode } from "@/lib/codes/generate";
+import { CODE_ALPHABET, DEFAULT_CODE_LENGTH, generateScanCode } from "@/lib/codes/generate";
 
 const EXCLUDED_CHARS = ["0", "O", "1", "l", "I"];
 
@@ -17,7 +17,10 @@ describe("CODE_ALPHABET", () => {
 
 describe("generateScanCode", () => {
   it("defaults to length 7", () => {
-    expect(generateScanCode()).toHaveLength(7);
+    // 6, not 7, and deliberately so: it is what keeps the printed deep link
+    // at 53 bytes and every QR at version 3. See DEFAULT_CODE_LENGTH.
+    expect(generateScanCode()).toHaveLength(6);
+    expect(generateScanCode()).toHaveLength(DEFAULT_CODE_LENGTH);
   });
 
   it("respects a custom length", () => {

@@ -53,13 +53,37 @@ https://t.me/nus_robomaster_inventory_bot/store?startapp=...  →  80+  ❌
 Recommendation: bot `nusrm_store` (or shorter), app `s`. Roughly 45–50
 characters total keeps you at QR version 3, which scans reliably at 20 mm.
 
+> **How this was actually resolved (2026-09-13).** The club's names are
+> `calibur_checkout_bot` / `app`, giving a 47-byte fixed prefix. **Telegram
+> requires a Mini App short name of at least 3 characters**, so the `s`
+> recommendation above is not achievable and the app name could not be
+> shortened. The bot username could not change either — that is the one true
+> reprint-everything event ([operations.md](operations.md)).
+>
+> The budget was met with the remaining lever instead: **scan codes are 6
+> characters**, putting the link at exactly **53 bytes — the version-3 limit**.
+>
+> | Code length | Link bytes | QR |
+> |---|---|---|
+> | 6 | 53 | **v3, 29×29** ✅ |
+> | 7 | 54 | v4, 33×33 |
+>
+> Six characters of the 59-character alphabet is ~42 billion combinations, so
+> across 500 labels the chance of any collision is ~3 in a million — and
+> `insertScanCodeWithRetry` retries on the unique violation regardless. The
+> budget is asserted by `buildLabelUrl`/`inspectLabelUrlConfig`, covered by
+> `tests/unit/label-url.test.ts`, and surfaced as a banner on `/admin/labels`,
+> so it cannot drift back silently.
+
 ## Code scheme
 
 Codes live in `scan_codes.code` ([data-model.md](data-model.md)) and are:
 
 - **Opaque** — no product id, no name, no structure to guess or enumerate
-- **Short** — 6–8 base64url characters (~10¹⁴ combinations at 8; collision is
-  not a concern at 500 labels)
+- **Short** — **6** base64url characters by default (`DEFAULT_CODE_LENGTH` in
+  `src/lib/codes/generate.ts`), which is what keeps the printed link inside the
+  53-byte version-3 budget. ~42 billion combinations; collision is not a
+  concern at 500 labels
 - **Case-sensitive but visually unambiguous** — exclude `0/O` and `1/l/I` from
   the generation alphabet so a human can read a code aloud or type it if a QR
   is damaged

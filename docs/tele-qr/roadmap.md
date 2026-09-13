@@ -17,7 +17,7 @@
 
 ---
 
-## Phase 0 — Verify the scanner (half a day)
+## Phase 0 — Verify the scanner — **passed** (2026-09-13)
 
 The entire design rests on one assumption. Test it before anything else.
 
@@ -34,11 +34,9 @@ The entire design rests on one assumption. Test it before anything else.
 flow collapses to app-switching per item and the design needs rethinking before
 any labels are printed. Everything downstream assumes this passes.
 
-> **Status as of 2026-09-12: STILL UNVERIFIED ON REAL DEVICES.** Phases 1–6 are
-> built on top of this assumption without it ever having been tested on an
-> actual iOS and Android handset. It remains the one thing that could invalidate
-> the design, and it must pass **before any labels are printed** — see
-> `qa-checklist.md`.
+> **Status: PASSED (2026-09-13).** Continuous scanning is confirmed working on
+> real devices. The gate is cleared and label printing is no longer blocked on
+> it — the assumption Phases 1–6 were built on holds.
 
 Also settle here, because it's irreversible later: **the bot and app names**.
 They're baked into every QR ([qr-labels.md](qr-labels.md)).

@@ -161,10 +161,15 @@ describe("qrVersionForBytes", () => {
 });
 
 describe("inspectLabelUrlConfig", () => {
-  it("reports a within-budget configuration", () => {
-    const result = inspectLabelUrlConfig(BOT, "s");
+  it("reports the club's real configuration as within budget", () => {
+    // The shipping configuration: bot `calibur_checkout_bot`, Mini App `app`,
+    // 6-character codes. 47 fixed bytes + 6 = exactly the 53-byte version-3
+    // budget. Telegram requires a Mini App short name of >= 3 characters, so
+    // `app` cannot be shortened -- the code length is the lever that got this
+    // under budget, and this test is what stops it drifting back.
+    const result = inspectLabelUrlConfig(BOT, "app");
     expect(result.error).toBeNull();
-    expect(result.byteLength).toBe(52);
+    expect(result.byteLength).toBe(53);
     expect(result.withinBudget).toBe(true);
     expect(result.overBy).toBe(0);
     expect(result.qrVersion).toBe(3);
@@ -172,9 +177,9 @@ describe("inspectLabelUrlConfig", () => {
   });
 
   it("reports an over-budget configuration without throwing", () => {
-    // The state of .env.local as of this task: app short name "app" makes
-    // the link 54 bytes, one over, forcing every label to version 4.
-    const result = inspectLabelUrlConfig(BOT, "app");
+    // One character longer than the generator now emits: 54 bytes, one over,
+    // which would silently push every sticker to version 4.
+    const result = inspectLabelUrlConfig(BOT, "app", 7);
     expect(result.error).toBeNull();
     expect(result.byteLength).toBe(54);
     expect(result.withinBudget).toBe(false);
@@ -190,9 +195,9 @@ describe("inspectLabelUrlConfig", () => {
   });
 
   it("is independent of which code characters are drawn", () => {
-    const sample = inspectLabelUrlConfig(BOT, "s");
+    const sample = inspectLabelUrlConfig(BOT, "app");
     for (let i = 0; i < 100; i++) {
-      const url = buildLabelUrl({ botUsername: BOT, appName: "s", code: generateScanCode() });
+      const url = buildLabelUrl({ botUsername: BOT, appName: "app", code: generateScanCode() });
       expect(utf8ByteLength(url)).toBe(sample.byteLength);
     }
   });
@@ -200,7 +205,7 @@ describe("inspectLabelUrlConfig", () => {
 
 describe("encodeQrSymbol", () => {
   it("encodes a within-budget link at version 3 / 29 modules", () => {
-    const url = buildLabelUrl({ botUsername: BOT, appName: "s", code: generateScanCode() });
+    const url = buildLabelUrl({ botUsername: BOT, appName: "app", code: generateScanCode() });
     const symbol = encodeQrSymbol(url);
     expect(symbol.version).toBe(3);
     expect(symbol.moduleCount).toBe(29);

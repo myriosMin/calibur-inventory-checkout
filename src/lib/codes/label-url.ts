@@ -17,6 +17,8 @@
  * and surfaced as a banner on /admin/labels.
  */
 
+import { DEFAULT_CODE_LENGTH } from "@/lib/codes/generate";
+
 /** Telegram's hard cap on the `startapp` query payload. */
 export const MAX_STARTAPP_LENGTH = 64;
 
@@ -173,14 +175,19 @@ export interface LabelUrlBudget {
 
 /**
  * Non-throwing budget check for the admin UI: "would the configured bot and
- * app names blow the version-3 budget?" Pass the length of a generated code
- * (`generateScanCode` defaults to 7) rather than a real code, so the answer
- * is about the *configuration* and not about one particular sticker.
+ * app names blow the version-3 budget?" Defaults to the length of a generated
+ * code rather than taking a real one, so the answer is about the
+ * *configuration* and not about one particular sticker.
+ *
+ * The default tracks `DEFAULT_CODE_LENGTH` deliberately: the code length is
+ * the lever that was actually used to get under budget (Telegram requires a
+ * Mini App short name of at least 3 characters, so `app` could not be
+ * shortened), and this check has to reflect what the generator really emits.
  */
 export function inspectLabelUrlConfig(
   botUsername: string,
   appName: string,
-  codeLength = 7,
+  codeLength = DEFAULT_CODE_LENGTH,
 ): LabelUrlBudget {
   const empty: LabelUrlBudget = {
     sampleUrl: "",

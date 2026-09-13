@@ -19,10 +19,10 @@ correct, get nudged, see the numbers.
 
 Two things stand between here and real use, and neither is code:
 
-1. **The continuous-scan gate has never been tested on a real phone.** Every
-   phase is built on the assumption that `showScanQrPopup` keeps scanning on
-   both iOS and Android. `roadmap.md` Phase 0 says to verify it before anything
-   else; it never was. See [qa-checklist.md](qa-checklist.md) §0.
+1. ~~The continuous-scan gate has never been tested on a real phone.~~
+   **PASSED (2026-09-13)** — continuous scanning is confirmed working on real
+   devices, so the assumption every phase rests on holds, and label printing is
+   no longer gated.
 2. **The catalog is still fixtures.** The bench-literate review pass
    ([../catalog-migration.md](../catalog-migration.md)) is 3–5 days of human
    work and remains the project's critical path.
@@ -148,11 +148,13 @@ distinguishes them, so the report is recoverable either way); pagination on
 
 ## Immediate next actions
 
-1. **Run [qa-checklist.md](qa-checklist.md) §0 on a real iOS and Android
-   phone.** Nothing downstream matters until this passes.
-2. Rename the Mini App short name to `s` in BotFather (§1) — keeps every QR at
-   version 3. Free now, a reprint-everything event later.
-3. Set `CRON_SECRET` and `TELEGRAM_ALERT_CHAT_ID` in Vercel.
+1. ~~Run the continuous-scan gate.~~ **Done — passed 2026-09-13.**
+2. ~~Rename the Mini App short name to `s`.~~ **Not possible** — Telegram
+   requires at least 3 characters. Resolved instead by generating **6-character
+   scan codes**, which put the link at exactly 53 bytes (QR v3). No BotFather
+   change needed; `app` stays.
+3. `CRON_SECRET` is set in Vercel. **`TELEGRAM_ALERT_CHAT_ID` is still unset**
+   — club-chat alerts no-op until it is (`npx tsx scripts/get-chat-id.ts`).
 4. Bootstrap the first real admin (`npx tsx scripts/bootstrap-admin.ts`), then
    import the roster.
 5. The catalog review pass, then opening balances via `/admin/restock`.

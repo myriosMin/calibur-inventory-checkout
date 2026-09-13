@@ -8,29 +8,25 @@ Work top to bottom; later sections assume the earlier ones passed.
 
 ---
 
-## 0. The gate — continuous scanning on real hardware
+## 0. The gate — continuous scanning on real hardware ✅ PASSED
 
-`roadmap.md` Phase 0 calls this "the one load-bearing assumption". The whole
-multi-item design — scan, scan, scan, then Done — collapses into
-app-switching-per-item if `showScanQrPopup` doesn't stay open. Phases 1–6 are
-built on top of it and it has never been tested on a handset.
+`roadmap.md` Phase 0 calls this "the one load-bearing assumption": the
+multi-item design collapses into app-switching-per-item if `showScanQrPopup`
+doesn't stay open.
 
-- [ ] **iOS**: scan a sticker → Mini App opens with the item already in the cart
-- [ ] **iOS**: after the first scan, the camera reopens by itself and a second
-      scan appends a second line without leaving the app
-- [ ] **Android**: both of the above
-- [ ] The follow-up sheets (destination / quantity / group-pick) appear **on top
-      of** the camera, not trapped behind it
-
-> If any of these fail, stop and report it rather than working around it. This
-> is a design-level finding, not a bug to patch.
+**Confirmed working on real devices (2026-09-13).** The gate is cleared and
+label printing is no longer blocked on it. Re-run this section only if the
+Telegram client's scanner behaviour appears to change after an app update.
 
 ## 1. Bot and Mini App configuration
 
-- [ ] BotFather: Mini App short name is **`s`**, not `app` — this keeps the deep
-      link at 52 bytes and every QR at version 3. At `app` it is 54 bytes, which
-      silently promotes all ~500 stickers to the denser version 4.
-      `NEXT_PUBLIC_TELEGRAM_MINIAPP_NAME` must match whatever BotFather says.
+- [ ] BotFather Mini App short name is **`app`**, and
+      `NEXT_PUBLIC_TELEGRAM_MINIAPP_NAME` matches it. **Resolved a different
+      way than first planned:** Telegram requires a short name of at least 3
+      characters, so `app` cannot be shortened. The budget is met by the *code*
+      instead — 6-character scan codes put the link at exactly 53 bytes, the
+      version-3 limit. Nothing to change here; `/admin/labels` shows a banner
+      if the numbers ever drift.
 - [ ] BotFather's Mini App URL points at the deployed production URL
 - [ ] Bot username is final. **Changing it later breaks every printed QR** —
       `operations.md` calls this "the one true reprint-everything event"

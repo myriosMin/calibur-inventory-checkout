@@ -21,11 +21,32 @@ const REJECTION_LIMIT =
   Math.floor(256 / CODE_ALPHABET.length) * CODE_ALPHABET.length;
 
 /**
+ * Default code length, and the reason it is 6 rather than 7.
+ *
+ * The printed deep link is `https://t.me/<bot>/<app>?startapp=<code>`. With
+ * the club's final names (`calibur_checkout_bot` / `app`) the fixed part is
+ * exactly 47 bytes, and QR version 3 at error-correction L holds 53 -- so a
+ * 6-character code lands precisely on the budget and a 7-character one tips
+ * every sticker into version 4 (33x33 modules instead of 29x29), shrinking
+ * each module by ~12% at the same 20 mm physical size.
+ *
+ * Shortening the code is the only lever available: Telegram requires a Mini
+ * App short name of at least 3 characters, so `app` cannot be shortened, and
+ * changing the bot username is the one true reprint-everything event
+ * (docs/tele-qr/operations.md).
+ *
+ * The cost is nil. 59^6 is ~42 billion combinations, so across 500 labels the
+ * chance of any collision is ~3e-6 -- and `insertScanCodeWithRetry` already
+ * retries on the unique-violation anyway.
+ */
+export const DEFAULT_CODE_LENGTH = 6;
+
+/**
  * Generates a short, opaque, base64url-safe scan code drawn from
  * `CODE_ALPHABET`, using cryptographically strong, unbiased per-character
  * sampling (never `Math.random()`).
  */
-export function generateScanCode(length = 7): string {
+export function generateScanCode(length = DEFAULT_CODE_LENGTH): string {
   let code = "";
   // Over-fetch: 236 of 256 byte values are accepted (~92%), so asking for
   // a few extra up front means one getRandomValues() call covers the whole
