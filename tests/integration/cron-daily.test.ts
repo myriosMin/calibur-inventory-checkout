@@ -1,4 +1,5 @@
 import "../../scripts/_env";
+import "./_schema-guard";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 

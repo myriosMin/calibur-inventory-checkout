@@ -1,4 +1,5 @@
 import "../../scripts/_env";
+import "./_schema-guard";
 
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -9,9 +10,9 @@ import { getServiceRoleClient } from "@/lib/supabase/server";
 import { POST } from "@/app/api/store/cart/submit/route";
 
 // ---------------------------------------------------------------------------
-// Integration test for WP14 (/api/store/cart/submit). Runs against the LIVE
-// calibur-inventory Supabase project (no mocking, real RPC calls) using real
-// fixture rows seeded by scripts/seed-fixtures.ts, and hits the route
+// Integration test for WP14 (/api/store/cart/submit). Runs against the `test`
+// schema of the live Supabase project (no mocking, real RPC calls): a snapshot
+// of the real catalog plus scripts/seed-test-schema.ts's test accounts. Hits the route
 // handler directly by constructing `Request` objects.
 //
 // Cleanup strategy: capture the max stock_movements.id and sessions row
@@ -139,7 +140,7 @@ describe("POST /api/store/cart/submit (integration, live DB)", () => {
     const { data: assetProduct, error: assetErr } = await db
       .from("products")
       .select("id")
-      .eq("name", "GM6020")
+      .eq("name", "DJI GM6020 motor")
       .eq("active", true)
       .single();
     if (assetErr) throw assetErr;

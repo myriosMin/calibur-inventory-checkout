@@ -1,4 +1,5 @@
 import "../../scripts/_env";
+import "./_schema-guard";
 
 import { createHmac } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -11,10 +12,10 @@ import { getServiceRoleClient } from "@/lib/supabase/server";
 // tests/integration/holdings.test.ts (WP13)
 //
 // Exercises /api/store/holdings and /api/store/holdings/sources against the
-// REAL live calibur-inventory project -- no mocking. Uses the pre-bound
-// fixture test member (telegram_user_id 900000000001, see
-// scripts/seed-fixtures.ts) and a single throwaway stock_movements row
-// (simulating a prior borrow to the seeded "Hero" robot) that this file
+// `test` schema of the live project -- no mocking. Uses the pre-bound test
+// member (telegram_user_id 900000000001, see scripts/seed-test-schema.ts)
+// and a single throwaway stock_movements row (simulating a prior borrow to
+// the real "Hero" robot) that this file
 // inserts in a `describe` block and always deletes afterwards, marked by a
 // distinguishing `scan_code` so a crashed prior run can never leave a
 // permanent trace.
@@ -97,11 +98,13 @@ describe("holdings routes (live DB)", () => {
     if (heroError) throw heroError;
     heroHolderId = hero.id;
 
+    // A second real robot the test member has never borrowed to. (The real
+    // roster has no plain "Standard"; the variable keeps its old name.)
     const { data: standard, error: standardError } = await db
       .from("holders")
       .select("id")
       .eq("kind", "robot")
-      .eq("name", "Standard")
+      .eq("name", "Sentry")
       .single();
     if (standardError) throw standardError;
     standardHolderId = standard.id;
@@ -118,7 +121,7 @@ describe("holdings routes (live DB)", () => {
     const { data: product, error: productError } = await db
       .from("products")
       .select("id")
-      .eq("name", "GM6020")
+      .eq("name", "DJI GM6020 motor")
       .single();
     if (productError) throw productError;
     productId = product.id;
@@ -255,7 +258,7 @@ describe("holdings routes (live DB)", () => {
       const line = body.items.find((item) => item.productId === productId);
       expect(line).toBeDefined();
       expect(line?.qty).toBe(baselineHeroQty + BORROWED_QTY);
-      expect(line?.name).toBe("GM6020");
+      expect(line?.name).toBe("DJI GM6020 motor");
     });
 
     it("holdings?holderId=<still-unrelated robot> -> 403", async () => {

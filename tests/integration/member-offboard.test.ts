@@ -1,4 +1,5 @@
 import "../../scripts/_env";
+import "./_schema-guard";
 
 import { createHmac } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -31,7 +32,7 @@ import { getServiceRoleClient } from "@/lib/supabase/server";
 // (telegram_user_id 900000000001) that every other integration suite depends
 // on: offboarding that row would deactivate it for the whole suite. It creates
 // its own throwaway member (plus one throwaway movement), and deletes both in
-// afterAll. Ids come from the 900000000000+ range scripts/seed-fixtures.ts
+// afterAll. Ids come from the 900000000000+ range scripts/seed-test-schema.ts
 // reserves, with a per-run nonce so concurrent runs can't collide.
 // ---------------------------------------------------------------------------
 

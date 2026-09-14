@@ -1,6 +1,7 @@
 // Generated via `supabase gen types typescript --linked --schema public`
 // against the calibur-inventory Supabase project. Do not hand-edit;
-// regenerate after schema changes.
+// regenerate after schema changes. The `test` schema is built from the same
+// migrations (scripts/migrate.ts), so these types describe it too.
 
 export type Json =
   | string
@@ -80,6 +81,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_units_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "stock_summary"
+            referencedColumns: ["product_id"]
           },
         ]
       }
@@ -325,6 +333,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "review_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "stock_summary"
+            referencedColumns: ["product_id"]
           },
           {
             foreignKeyName: "review_items_resolved_by_fkey"

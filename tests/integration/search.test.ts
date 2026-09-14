@@ -1,4 +1,5 @@
 import "../../scripts/_env";
+import "./_schema-guard";
 
 import { execFileSync } from "node:child_process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -10,11 +11,11 @@ import type { TablesInsert } from "@/lib/types/database";
 // -----------------------------------------------------------------------
 // tests/integration/search.test.ts (WP12)
 //
-// Exercises GET /api/store/search directly against the REAL, remote
-// calibur-inventory Supabase project -- no mocking of the Supabase client
-// or of member-auth. Auth is a genuine, validly-signed initData string for
-// the pre-bound fixture test member (telegram_user_id 900000000001, see
-// scripts/seed-fixtures.ts), produced by actually running
+// Exercises GET /api/store/search directly against the `test` schema of the
+// live Supabase project -- no mocking of the Supabase client or of
+// member-auth. Auth is a genuine, validly-signed initData string for the
+// pre-bound test member (telegram_user_id 900000000001, see
+// scripts/seed-test-schema.ts), produced by actually running
 // scripts/dev-mock-init-data.ts rather than re-implementing its signing
 // logic here.
 //
@@ -111,52 +112,61 @@ describe("GET /api/store/search", () => {
     expect(body.error).toBe("missing_init_data");
   });
 
-  it("finds a real seeded product by a substring of its name", async () => {
-    // Look up an actual seeded product rather than hardcoding one, so this
-    // test doesn't silently rot if the fixture catalog changes shape.
+  it("finds a real product by a substring of its name", async () => {
+    // A real product from the catalog snapshot in the test schema.
     const { data: seeded, error } = await db
       .from("products")
       .select("id, name")
       .eq("active", true)
-      .eq("name", "GM6020")
+      .eq("name", "DJI GM6020 motor")
       .single();
     if (error) throw error;
 
-    const substring = seeded.name.slice(0, 4); // "GM60"
-    const res = await GET(searchRequest(substring));
+    // "GM60" rather than the name's first characters: "DJI " matches dozens
+    // of real DJI parts, and the 20-row cap could push this one out.
+    const res = await GET(searchRequest("GM60"));
     expect(res.status).toBe(200);
     const body = await res.json();
     const ids = body.items.map((item: { id: string }) => item.id);
     expect(ids).toContain(seeded.id);
   });
 
-  it('finds the spec-only "10k" resistor via its jsonb spec, not its name', async () => {
-    // scripts/seed-fixtures.ts seeds "Resistor 0402" with
-    // spec = { value: "10k", package: "0402", ... } and deliberately no
-    // "10k" substring in the name -- confirm that precondition, then prove
-    // the search route's jsonb-side match is what surfaces it.
+  it("finds a product via its jsonb spec when the term is not in its name", async () => {
+    // Every real resistor carries its value in its name too ("Resistor 10kΩ
+    // 0402"), so the spec-only case gets its own throwaway product whose spec
+    // value appears nowhere else, deleted again below.
+    const specValue = `SPECONLY${Date.now()}`;
     const { data: specProduct, error } = await db
       .from("products")
+      .insert({
+        name: "WP12 Throwaway Spec Fixture",
+        tier: "bulk",
+        unit: "pcs",
+        active: true,
+        spec: { type: "resistor", value: specValue, package: "0402" },
+      })
       .select("id, name, spec")
-      .eq("active", true)
-      .eq("name", "Resistor 0402")
       .single();
     if (error) throw error;
 
-    expect(specProduct.name.toLowerCase()).not.toContain("10k");
-    expect((specProduct.spec as { value?: string } | null)?.value).toBe("10k");
+    try {
+      expect(specProduct.name).not.toContain(specValue);
 
-    const res = await GET(searchRequest("10k"));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    const ids = body.items.map((item: { id: string }) => item.id);
-    expect(ids).toContain(specProduct.id);
+      const res = await GET(searchRequest(specValue));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      const ids = body.items.map((item: { id: string }) => item.id);
+      expect(ids).toContain(specProduct.id);
 
-    // The response should carry the row's own spec, unmangled.
-    const returned = body.items.find(
-      (item: { id: string }) => item.id === specProduct.id,
-    );
-    expect(returned.spec).toEqual(specProduct.spec);
+      // The response should carry the row's own spec, unmangled.
+      const returned = body.items.find(
+        (item: { id: string }) => item.id === specProduct.id,
+      );
+      expect(returned.spec).toEqual(specProduct.spec);
+    } finally {
+      const { error: deleteError } = await db.from("products").delete().eq("id", specProduct.id);
+      if (deleteError) throw deleteError;
+    }
   });
 
   it("never returns an inactive product", async () => {

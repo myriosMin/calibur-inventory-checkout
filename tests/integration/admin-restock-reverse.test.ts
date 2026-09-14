@@ -1,4 +1,5 @@
 import "../../scripts/_env";
+import "./_schema-guard";
 
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -93,7 +94,7 @@ describe("admin_restock / admin_reverse_movement (integration, live DB)", () => 
     const { data: asset, error: assetErr } = await db
       .from("products")
       .select("id")
-      .eq("name", "GM6020")
+      .eq("name", "DJI GM6020 motor")
       .eq("active", true)
       .single();
     if (assetErr) throw assetErr;

@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import type { NextRequest, NextResponse } from "next/server";
 
+import { dbSchemaOption } from "@/lib/supabase/schema";
 import type { Database } from "@/lib/types/database";
 
 // Used by src/middleware.ts (WP18) to read/refresh the Supabase Auth session
@@ -19,6 +20,7 @@ export function getMiddlewareClient(
   }
 
   return createServerClient<Database>(url, anonKey, {
+    db: dbSchemaOption(),
     cookies: {
       getAll() {
         return request.cookies.getAll();

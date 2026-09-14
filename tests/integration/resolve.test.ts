@@ -1,4 +1,5 @@
 import "../../scripts/_env";
+import "./_schema-guard";
 
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -92,7 +93,7 @@ describe("POST /api/store/resolve (integration, live DB)", () => {
     if (productCodeErr) throw productCodeErr;
     if (!productCodeRow || !productCodeRow.product_id) {
       throw new Error(
-        "No active product scan_codes row found -- run `npx tsx scripts/seed-fixtures.ts` first.",
+        "No active product scan_codes row found -- run `npx tsx scripts/seed-test-schema.ts` first.",
       );
     }
     seededProductCode = productCodeRow.code;
@@ -106,13 +107,13 @@ describe("POST /api/store/resolve (integration, live DB)", () => {
     if (productErr) throw productErr;
     if (!productRow.active) {
       throw new Error(
-        `Seeded product scan_codes row ${seededProductCode} points at an inactive product; fixtures may have changed.`,
+        `Seeded product scan_codes row ${seededProductCode} points at an inactive product; re-run scripts/seed-test-schema.ts.`,
       );
     }
     seededProduct = productRow;
 
-    // Find the real seeded group scan_codes row (fixtures point this at the
-    // "Resistor book" location per scripts/seed-fixtures.ts).
+    // Find the group scan_codes row scripts/seed-test-schema.ts puts on the
+    // real "Resistor book (0402)" location.
     const { data: groupCodeRow, error: groupCodeErr } = await db
       .from("scan_codes")
       .select("code, location_id")

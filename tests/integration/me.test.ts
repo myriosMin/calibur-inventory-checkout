@@ -1,4 +1,5 @@
 import "../../scripts/_env";
+import "./_schema-guard";
 
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -78,7 +79,7 @@ describe("GET /api/store/me/* (integration, live DB)", () => {
     const { data: product, error: productErr } = await db
       .from("products")
       .select("id, name")
-      .eq("name", "GM6020")
+      .eq("name", "DJI GM6020 motor")
       .eq("active", true)
       .single();
     if (productErr) throw productErr;

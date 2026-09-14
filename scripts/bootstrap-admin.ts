@@ -2,6 +2,7 @@ import "./_env";
 
 import { createClient } from "@supabase/supabase-js";
 
+import { dbSchemaOption } from "@/lib/supabase/schema";
 import { getServiceRoleClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/types/database";
 
@@ -200,6 +201,7 @@ async function main() {
   console.log("\nVerifying is_admin() through a real authenticated session…");
   const asUser = createClient<Database>(supabaseUrl, anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
+    db: dbSchemaOption(),
   });
 
   const { error: signInError } = await asUser.auth.signInWithPassword({ email, password });

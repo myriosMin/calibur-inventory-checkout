@@ -16,6 +16,13 @@ export default defineConfig({
     // asserting on mid-run). Forcing sequential file execution trades some
     // wall-clock time for tests that are actually deterministic.
     fileParallelism: false,
+    // Every test talks to the `test` schema, never `public` (the real
+    // inventory). Set here rather than in .env.local so it cannot be
+    // forgotten, and process.loadEnvFile() in scripts/_env.ts never
+    // overrides a variable that is already set. src/lib/supabase/schema.ts.
+    env: {
+      NEXT_PUBLIC_SUPABASE_SCHEMA: "test",
+    },
   },
   resolve: {
     alias: {

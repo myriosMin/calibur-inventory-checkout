@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+import { dbSchemaOption } from "@/lib/supabase/schema";
 import type { Database } from "@/lib/types/database";
 
 // Service-role client. NEVER import this from anything that can end up in a
@@ -32,6 +33,7 @@ export function getServiceRoleClient(): SupabaseClient<Database> {
 
   client = createClient<Database>(url, serviceRoleKey, {
     auth: { persistSession: false },
+    db: dbSchemaOption(),
   });
   return client;
 }

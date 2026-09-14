@@ -1,4 +1,5 @@
 import "../../scripts/_env";
+import "./_schema-guard";
 
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -6,9 +7,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getServiceRoleClient } from "@/lib/supabase/server";
 
 // ---------------------------------------------------------------------------
-// Integration test for the stocktake commit path. Runs against the LIVE dev
-// Supabase project (no mocking) using fixture rows from
-// scripts/seed-fixtures.ts, calling `admin_commit_stocktake` exactly as the
+// Integration test for the stocktake commit path. Runs against the `test`
+// schema of the live project (no mocking) -- real catalog rows plus
+// scripts/seed-test-schema.ts's test admin -- calling `admin_commit_stocktake` exactly as the
 // /admin/stocktake page does -- except for the auth leg: the page calls it
 // with a signed-in admin's anon session (is_admin() via RLS), while this
 // calls it with the service-role key, which the function's guard admits via
@@ -151,11 +152,13 @@ describe("admin_commit_stocktake (integration, live DB)", () => {
       .maybeSingle();
     locationId = location?.id ?? null;
 
-    // Three distinct fixture products so each scenario's holdings stay
-    // independent of the others.
-    gainProductId = await productIdByName("M2006");
-    lossProductId = await productIdByName("Damiao 4310");
-    matchProductId = await productIdByName("C620 ESC");
+    // Three distinct real products so each scenario's holdings stay
+    // independent of the others. The loss case needs at least 2 in the store
+    // (the real catalog seeds 6 DM4310s there); gain and match work from any
+    // starting quantity.
+    gainProductId = await productIdByName("DJI M2006 motor");
+    lossProductId = await productIdByName("Damiao DM4310 motor");
+    matchProductId = await productIdByName("DJI C615 ESC");
 
     baselineMaxId = await maxStockMovementId();
   });

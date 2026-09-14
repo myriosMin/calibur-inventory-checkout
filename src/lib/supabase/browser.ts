@@ -1,5 +1,6 @@
 import { createBrowserClient } from "@supabase/ssr";
 
+import { dbSchemaOption } from "@/lib/supabase/schema";
 import type { Database } from "@/lib/types/database";
 
 // Anon-key client for /admin client components. Relies on Supabase Auth +
@@ -15,5 +16,5 @@ export function getBrowserClient() {
     );
   }
 
-  return createBrowserClient<Database>(url, anonKey);
+  return createBrowserClient<Database>(url, anonKey, { db: dbSchemaOption() });
 }

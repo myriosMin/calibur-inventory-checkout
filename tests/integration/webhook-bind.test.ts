@@ -1,4 +1,5 @@
 import "../../scripts/_env";
+import "./_schema-guard";
 
 import { afterAll, describe, expect, it } from "vitest";
 
@@ -22,11 +23,11 @@ import { getServiceRoleClient } from "@/lib/supabase/server";
 // happen and assert the route still returns 200.
 //
 // Fake Telegram user/chat ids used here are drawn from the same
-// 900000000000+ range scripts/seed-fixtures.ts reserves for exactly this
+// 900000000000+ range scripts/seed-test-schema.ts reserves for exactly this
 // purpose (real Telegram ids are currently far below 2^32), picking ids
-// other than the pre-bound fixture 900000000001 so we don't collide with it.
-// All rows this file creates (or member bindings it makes) are cleaned up in
-// afterAll so the live DB is left exactly as it was found.
+// other than the pre-bound test member 900000000001 so we don't collide with
+// it. All rows this file creates (or member bindings it makes) are cleaned up
+// in afterAll so the test schema is left exactly as it was found.
 // ---------------------------------------------------------------------------
 
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -38,7 +39,8 @@ if (!WEBHOOK_SECRET) {
 
 const WEBHOOK_URL = "http://localhost/api/tg/webhook";
 
-const FIXTURE_USERNAME = "alextan_nus"; // scripts/seed-fixtures.ts -- unbound member
+// scripts/seed-test-schema.ts -- a member with a handle but no Telegram id yet.
+const FIXTURE_USERNAME = "calibur_test_unbound";
 
 // Fresh fake ids per run, not the reserved 900000000001: this repo has many
 // work packages under active parallel development against the same live
@@ -154,16 +156,16 @@ describe("POST /api/tg/webhook (WP10 identity binding)", () => {
     expect(afterCount).toBe(beforeCount);
   });
 
-  it("(b) binds a fixture-seeded member on /start from a new fake id", async () => {
+  it("(b) binds a seeded unbound member on /start from a new fake id", async () => {
     const before = await getMemberByUsername(FIXTURE_USERNAME);
     expect(before.telegram_user_id).toBeNull();
 
     const update = buildUpdate({
       fromId: BIND_FAKE_ID,
       // Mixed case + no leading "@" -- exercises normalizeTelegramHandle.
-      username: "AlexTan_NUS",
-      firstName: "Alex",
-      lastName: "Tan",
+      username: "Calibur_Test_Unbound",
+      firstName: "Test",
+      lastName: "Unbound",
       text: "/start",
     });
 

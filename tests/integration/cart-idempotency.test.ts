@@ -1,4 +1,5 @@
 import "../../scripts/_env";
+import "./_schema-guard";
 
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -111,7 +112,7 @@ describe("POST /api/store/cart/submit -- idempotency + 'took the last of it'", (
     const { data: asset, error: assetErr } = await db
       .from("products")
       .select("id")
-      .eq("name", "GM6020")
+      .eq("name", "DJI GM6020 motor")
       .eq("active", true)
       .single();
     if (assetErr) throw assetErr;
