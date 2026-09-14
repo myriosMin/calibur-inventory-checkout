@@ -112,32 +112,37 @@ automation or physical device is available in an agent session, and the
 continuous-scan gate (§0) must pass **before any labels are printed**.
 
 ### 2. Data
-**Cleaned and rehearsed, not imported (2026-09-13).** See
+**The real catalog is live in `public` (imported 2026-09-14).** See
 [../data-cleaning.md](../data-cleaning.md).
 
-- `scripts/clean-data/build.ts` merges the xlsx and the legacy app export into
-  `data/clean/`. That directory is gitignored because it holds member emails.
-- `scripts/import-clean-data.ts` turns the reviewed CSVs into one SQL
-  transaction, with opening balances as `seed` movements. Hand-entering them
-  via `/admin/restock` is no longer needed.
-- Migration `0024` (ownership, criticality, `asset_units`, `procurement`
-  role) and the full import were run against the live project, rolled back:
-  555 products, 314 units, 0 negative holdings. **Neither is applied.**
+- What landed: 567 products (12 held as inactive), 314 serialised units, 591
+  opening balances, 9 legacy loans, 164 open review items, 0 negative holdings.
+- Migrations `0024` and `0025` are applied to `public`.
+- The old dev fixtures and trial sessions were purged from `public`.
 
-**Decided 2026-09-13:** the real data goes into a **new Supabase project**. The
-current one stays dev and test. Reviewers get `procurement` accounts and review
-**in `/admin`**, not in CSVs:
+**Test and real data are split by schema, in the same project** (decided
+2026-09-14; no second project):
 
-- migration `0025` adds the review queue and procurement stocktake
-- `/admin/review` lists the queue
-- product pages show review items, holdings and units
-- Stocktake can count a robot
+- The `test` schema holds the same migrations, a snapshot of the real catalog,
+  and test accounts from `scripts/seed-test-schema.ts`.
+- The integration tests now use real product and robot names and run only
+  against `test`. Two locks: the schema pinned in `vitest.config.ts`, and
+  `tests/integration/_schema-guard.ts`.
+- See architecture.md, "Test schema". Every migration now goes to both
+  schemas with `scripts/migrate.ts`.
 
-`scripts/provision-project.ts` loads the schema and runs the import against a
-project ref without re-linking dev.
+Reviewers work in `/admin`:
 
-Still waiting on: the new project to be created, real names and Telegram
-handles for the roster, and deciding who is procurement.
+- `/admin/review` for the queue
+- product pages for review items, holdings and units
+- Stocktake for counting shelves or robots
+
+Still waiting on:
+
+- reviewer accounts: add each as `procurement` in `/admin/members`, then
+  `create-admin-user.ts` for a password
+- real names and Telegram handles for the roster
+- the SME review itself
 
 ### 3. "Failed submits" is on the observability list and is not buildable
 A failed submit never reaches the database and the cart is client state with

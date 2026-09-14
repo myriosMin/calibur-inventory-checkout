@@ -128,10 +128,42 @@ read/write; members can read their own history.
 Deliberately *not* Telegram login for admins — the dashboard is a laptop
 surface, and mixing two identity systems in one app costs more than it saves.
 
+## Test schema
+
+One Supabase project, two Postgres schemas (decided 2026-09-14, instead of a
+second project):
+
+- **`public`** holds the real inventory. It's what the deployed app reads.
+- **`test`** is built from the same migrations and holds a snapshot of the
+  real catalog plus three test-only accounts and a few scan codes. The
+  integration tests mutate it freely.
+
+How the app and its tooling pick a schema:
+
+- **App clients:** `NEXT_PUBLIC_SUPABASE_SCHEMA` (`src/lib/supabase/schema.ts`)
+  sets the schema on every Supabase client. Unset means `public`, and an
+  unknown value throws.
+- **Tests:** `vitest.config.ts` pins `test`, and
+  `tests/integration/_schema-guard.ts` checks the client itself before any
+  test runs.
+- **Migrations:** `scripts/migrate.ts` applies each one to either schema. For
+  `test` it re-pins function `search_path`s, runs with `test` as the only
+  schema on the path, and then verifies that no function, view, policy,
+  trigger or foreign key in `test` refers to `public`.
+- **REST exposure:** PostgREST serves `test` through an in-database setting,
+  `alter role authenticator set pgrst.db_schemas = 'public, graphql_public, test'`.
+
+Why schemas rather than a second project: this is still a small test
+deployment, and a schema costs nothing. What it gives up is blast-radius
+isolation. The service-role key reaches both schemas, and a client that forgets
+the schema option lands in `public`. That already happened once, which is why
+the guard checks the client rather than the environment variable.
+
 ## Environment
 
 | Variable | Where | Notes |
 |---|---|---|
+| `NEXT_PUBLIC_SUPABASE_SCHEMA` | local / tests | `public` (default) or `test`. Leave unset in Vercel; tests set it in `vitest.config.ts` |
 | `TELEGRAM_BOT_TOKEN` | Vercel env | Signs and validates `initData`; never client-side |
 | `TELEGRAM_WEBHOOK_SECRET` | Vercel env | Header check on the webhook route |
 | `SUPABASE_SERVICE_ROLE_KEY` | Vercel env | Server-only |

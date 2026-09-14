@@ -2,9 +2,10 @@
 
 ## TL;DR
 
-- **The real inventory is cleaned and rehearsed.** The next step is loading
-  it into a new Supabase project, where the people who run the store review
-  it in `/admin`.
+- **The real inventory is live in `public` (imported 2026-09-14).** The people
+  who run the store review it in `/admin`. The old dev fixtures are gone. A
+  snapshot of the same catalog sits in the `test` schema for the integration
+  tests (see tele-qr/architecture.md, "Test schema").
 - **Two scripts do the work:**
   - `scripts/clean-data/build.ts` turns the spreadsheet
     (`data/RoboMaster_Inventory_3_Sheets.xlsx`) and the legacy checkout
@@ -250,27 +251,31 @@ The `/admin/products` list shows criticality, ownership, in-store and out
 quantities, and open review counts. It filters on all of them, including
 "needs review".
 
-## Importing into the new project
+## How it was imported (2026-09-14)
+
+One Supabase project, two schemas: `public` for the real data and `test` for
+the tests (tele-qr/architecture.md, "Test schema").
 
 ```bash
 # 0. The package (once): data/clean/
 npx tsx scripts/clean-data/build.ts
 
-# 1. Schema into the NEW project (a scratch link; this checkout stays linked to dev)
-npx tsx scripts/provision-project.ts --project-ref <new-ref> --dry-run
-npx tsx scripts/provision-project.ts --project-ref <new-ref>
-
-# 2. Rehearse the import against it (always rolls back), then apply
+# 1. public: purge the dev fixtures (done once, snapshot kept), migrate, rehearse, import
+npx tsx scripts/migrate.ts --schema public
 npx tsx scripts/import-clean-data.ts --rehearse
-npx tsx scripts/provision-project.ts --project-ref <new-ref> --run data/clean/import.rehearse.sql
+supabase db query --linked -f data/clean/import.rehearse.sql   # "IMPORT REHEARSAL OK", rolled back
 npx tsx scripts/import-clean-data.ts
-npx tsx scripts/provision-project.ts --project-ref <new-ref> --run data/clean/import.sql
+supabase db query --linked -f data/clean/import.sql
 
-# 3. Accounts: keys for the new project in .env.production.local (never .env.local)
-ENV_FILE=.env.production.local npx tsx scripts/bootstrap-admin.ts
-#    then, per reviewer: add them in /admin/members with role "procurement" and
-#    their email, and give them a password:
-ENV_FILE=.env.production.local npx tsx scripts/create-admin-user.ts <email> <password>
+# 2. test: the same catalog, plus test accounts and scan codes
+npx tsx scripts/migrate.ts --schema test --reset
+npx tsx scripts/import-clean-data.ts --schema test
+supabase db query --linked -f data/clean/import.test.sql
+npx tsx scripts/seed-test-schema.ts
+
+# 3. Reviewers: add each in /admin/members with role "procurement" and their
+#    email, then give them a password
+npx tsx scripts/create-admin-user.ts <email> <password>
 ```
 
 Notes:
@@ -278,10 +283,11 @@ Notes:
 - **`supabase db query -f` runs a file as a single transaction**: an error
   anywhere rolls back everything, including DDL. That was verified before
   relying on it.
-- **Types:** `src/lib/types/database.ts` has 0024/0025 added by hand.
-  Regenerate from the new project once it is provisioned.
-- **Going live:** point Vercel's Supabase env vars at the new project. The dev
-  project stays for integration tests and fixtures.
+- **Duplicate admin merged.** The legacy account `minmyrios@gmail.com` is the
+  existing admin Myrios, so that `members.csv` row was pointed at
+  `myriosmin@u.nus.edu` and the import kept the existing row.
+- **Types** in `src/lib/types/database.ts` are regenerated from `public` and
+  describe `test` too.
 - **Admin login needs a matching email.** Staff sign in only if their Supabase
   Auth email equals `members.nus_email`.
 - **One imported loan is already overdue** (a PM02 out since 7 Aug 2026).

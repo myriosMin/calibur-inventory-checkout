@@ -236,7 +236,7 @@ which way the movement went:
 |---|---|
 | `borrow` / `consume` / `return` | `submit_cart` |
 | `return_adjustment` | `submit_cart`, when more is returned than was logged out |
-| `seed` | `scripts/seed-fixtures.ts` |
+| `seed` | `scripts/import-clean-data.ts` — opening balances of the real catalog |
 | `restock` | `admin_restock` — newly received stock |
 | `stocktake_gain` / `stocktake_loss` | `admin_commit_stocktake` |
 | `correction` | `admin_reverse_movement` |

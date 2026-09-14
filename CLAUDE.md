@@ -36,61 +36,101 @@ npx vitest run -t "test name substring"           # single test by name
 No standalone typecheck script; `npm run build` type-checks as part of the
 Next.js build.
 
+### One project, two schemas
+
+There is one Supabase project. **`public` holds the real inventory**, which is
+what the deployed app reads. **`test` is an identical copy** that the
+integration tests mutate:
+
+- same migrations
+- a snapshot of the real catalog
+- three test-only accounts and a few scan codes
+
+`NEXT_PUBLIC_SUPABASE_SCHEMA` (`src/lib/supabase/schema.ts`) picks the schema
+for every Supabase client. Unset means `public`, and any value other than
+`public` or `test` throws.
+
+Mistakes to avoid:
+
+- **Any new Supabase client must pass `db: dbSchemaOption()`.** Forgetting it
+  once sent a test seed into the real data.
+- **Scripts that must only touch `test` import `./_test-schema` first.**
+- **Every migration goes to both schemas:**
+  `npx tsx scripts/migrate.ts --schema public` and `--schema test`. The `test`
+  run verifies that nothing in `test` references `public`.
+- **`test` is exposed to the REST API** through
+  `alter role authenticator set pgrst.db_schemas = 'public, graphql_public, test'`.
+  Reset that setting to un-expose it.
+
 ### Tests need live infra
 
-`tests/integration/**` make real network calls against the live dev Supabase
-project and the Telegram Bot API — **there is no mocked/local DB for tests.**
-They read `.env.local` via `tests/../scripts/_env.ts` (same loader every
-`scripts/*.ts` uses, since these run outside Next.js's own env loading).
-Fixture rows come from `scripts/seed-fixtures.ts` (idempotent — safe to
-re-run). `vitest.config.ts` forces `fileParallelism: false` because
-integration files share and mutate the same fixture rows; don't re-enable it
-without addressing that.
+`tests/integration/**` make real network calls against the **`test` schema**
+of the live Supabase project and the Telegram Bot API. **There is no
+mocked/local DB.**
+
+- `vitest.config.ts` sets `NEXT_PUBLIC_SUPABASE_SCHEMA=test`.
+- Every integration file imports `tests/integration/_schema-guard.ts`, which
+  refuses to run unless the service-role client really targets `test`.
+- Tests use real product and robot names ("DJI GM6020 motor", "Hero",
+  "Sentry").
+- `.env.local` is read via `scripts/_env.ts`, which never overrides variables
+  that are already set.
+- `vitest.config.ts` forces `fileParallelism: false` because integration files
+  share and mutate the same rows. Don't re-enable it without addressing that.
+
+Rebuild the test schema from scratch:
+
+```bash
+npx tsx scripts/migrate.ts --schema test --reset
+npx tsx scripts/import-clean-data.ts --schema test
+supabase db query --linked -f data/clean/import.test.sql
+npx tsx scripts/seed-test-schema.ts
+```
 
 `tests/unit/**` are pure (cart reducer, code generation, catalog CSV parsing,
-init-data HMAC verification) and need no network.
+init-data HMAC verification, schema rewriting) and need no network.
 
 ### Scripts (`scripts/*.ts`, run via `npx tsx`)
 
-- `seed-fixtures.ts` — idempotent dev fixtures (members, robots, products
-  across all 3 tiers, scan codes, seed movements) into the live dev project.
-- `import-catalog.ts [csvPath] [outPath]` — parses the real 538-row inventory
-  CSV into a flagged review CSV (`scripts/out/catalog-review.csv`). Read-only:
-  never touches the DB. See `docs/catalog-migration.md`. Superseded by the two
-  below, which work from the xlsx.
-- `clean-data/build.ts [--force]` — merges the xlsx and the legacy app export
-  (`data/db/*.csv`) into the SME review package `data/clean/` (gitignored:
-  member emails). Judgement calls live in `clean-data/curation.ts`. **Refuses
-  to overwrite `data/clean/` without `--force`, because reviewers edit it there.**
-- `import-clean-data.ts [--rehearse [--with-migration]]` — validates
-  `data/clean/` and writes one SQL transaction. A `--rehearse` file ends in
-  `raise exception`, so `supabase db query --linked -f` runs it and rolls
-  everything back. See `docs/data-cleaning.md`.
-- `provision-project.ts --project-ref <ref> [--dry-run] [--run file.sql]` —
-  applies every migration, recorded in `schema_migrations`, to a **new**
-  project through a scratch workdir link, then optionally runs a SQL file
-  (e.g. the import). This checkout stays linked to dev, and the script refuses
-  the dev ref.
-- Any script can target another project with `ENV_FILE=.env.production.local`.
-  `_env.ts` fails loudly if the named file is missing, rather than falling
-  back to dev.
-- `create-admin-user.ts` — bootstraps a Supabase Auth user for `/admin`.
-- `dev-mock-init-data.ts <telegram_user_id>` — prints a signed mock Telegram
-  `initData` string for local dev/testing without a real Telegram client (used
-  by `NEXT_PUBLIC_DEV_MOCK_INIT_DATA` and by the integration tests).
+- `migrate.ts --schema public|test [--reset] [--dry-run]`: applies pending
+  migrations to one schema through the CLI. `supabase db push` does not work
+  here. Each migration and its bookkeeping row go in one transaction. `--reset`
+  exists only for `test`.
+- `seed-test-schema.ts`: adds the test-only rows the real catalog can't
+  provide: test admin `admin@example.com`, bound Telegram member `900000000001`,
+  an unbound member, and scan codes. Idempotent. Refuses anything but `test`.
+- `clean-data/build.ts [--force]`: merges the xlsx and the legacy app export
+  (`data/db/*.csv`) into `data/clean/`, which is gitignored because it holds
+  member emails. Judgement calls live in `clean-data/curation.ts`. **It refuses
+  to overwrite `data/clean/` without `--force`.**
+- `import-clean-data.ts [--schema public|test] [--rehearse [--with-migration]]`:
+  validates `data/clean/` and writes one SQL transaction (`import.sql`, or
+  `import.test.sql`). A `--rehearse` file ends in `raise exception`, so running
+  it changes nothing. `public` was imported on 2026-09-14. See
+  `docs/data-cleaning.md`.
+- `import-catalog.ts [csvPath] [outPath]`: the original single-CSV review
+  generator, read-only. Superseded by `clean-data/`.
+- `create-admin-user.ts`: creates a Supabase Auth user for `/admin`.
+  `bootstrap-admin.ts` does the members row too and verifies `is_admin()`.
+- `dev-mock-init-data.ts <telegram_user_id>`: prints a signed mock Telegram
+  `initData` string for local dev and for the integration tests.
+- `ENV_FILE=<file>` makes any script load a different env file. `_env.ts`
+  fails loudly if it's missing.
 
 ### Environment
 
 Copy `.env.local.example` → `.env.local`. Required: `TELEGRAM_BOT_TOKEN`,
 `TELEGRAM_WEBHOOK_SECRET`, `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME`,
 `NEXT_PUBLIC_TELEGRAM_MINIAPP_NAME`, `SUPABASE_SERVICE_ROLE_KEY`,
-`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Full table with
-notes in `docs/tele-qr/architecture.md`.
+`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Optional:
+`NEXT_PUBLIC_SUPABASE_SCHEMA=test` to run the app locally against test data.
+Full table with notes in `docs/tele-qr/architecture.md`.
 
-Supabase project is linked via `.mcp.json` (project ref `dholwxsxzasoafeqjovk`)
-— prefer the `mcp__supabase__*` tools for inspecting schema/logs/advisors over
-raw SQL, and `supabase/migrations/*.sql` (numbered, applied in order) for
-schema changes rather than editing the live DB ad hoc.
+Supabase project is linked via `.mcp.json` (project ref `dholwxsxzasoafeqjovk`).
+Prefer the `mcp__supabase__*` tools, or `supabase db query --linked`, for
+inspecting schema, logs and advisors. Make schema changes as numbered files in
+`supabase/migrations/*.sql`, applied with `scripts/migrate.ts`, never by
+editing the live DB ad hoc.
 
 ## Architecture
 
@@ -106,7 +146,7 @@ not being built).
 /store/*          Mini App — runs inside Telegram's web view
                    continuous QR scan → cart → destination → submit
 /admin/*          Dashboard — Supabase email auth (middleware-gated)
-                   products, holders, scan-codes, bind queue
+                   review queue, products, units, stocktake, restock, holders
 /api/tg/webhook    Telegram → identity binding (/start)
 /api/store/*       Mini App API — the ONLY thing the Mini App talks to
 ```
@@ -122,12 +162,13 @@ not being built).
   **service role** (bypasses RLS) to read/write. Never trust
   `initDataUnsafe`/client-supplied identity for anything security-relevant.
 - **`/admin` uses Supabase email auth.** `src/middleware.ts` only checks
-  "is there a session" — it does _not_ check "is this user an admin". That's
-  enforced by RLS's `is_admin()` (`supabase/migrations/0009_rls_policies.sql`)
-  on every query the admin browser client makes directly against Supabase
-  (`src/lib/supabase/browser.ts`) — there is no bespoke `/api/admin/*` layer.
-  A signed-in non-admin passes middleware but gets empty results / write
-  failures from RLS.
+  "is there a session". Access is enforced by RLS on every query the admin
+  browser client makes (`src/lib/supabase/browser.ts`); there is no bespoke
+  `/api/admin/*` layer.
+  - `is_admin()` (0009) covers developers.
+  - `is_staff()` (0024) also admits `procurement` to read the inventory,
+    maintain the catalog, restock, stocktake and work the review queue.
+  - The nav hiding admin-only pages (`src/app/admin/nav.ts`) is cosmetic.
 
 **The data model — holders and movements** (`docs/tele-qr/data-model.md`):
 stock is held by a `holders` row (`store` / `robot` / `member` / `consumed` /
@@ -135,11 +176,16 @@ stock is held by a `holders` row (`store` / `robot` / `member` / `consumed` /
 consume, stocktake correction — is one `stock_movements` row from one holder
 to another. Current holdings are derived (`holdings`/`stock_summary` views),
 never stored directly. `products.tier` (`asset` / `bulk` / `loose`) controls
-_counting UX only_, not whether an item can be scanned. `scan_codes` is a
-separate table from `products` (not a column) specifically so a damaged label
-can be reissued a new code, or retired, without touching the product —
-`kind = 'group'` codes (e.g. the resistor book) resolve to a location and let
-the user pick from a list rather than a single product.
+_counting UX only_, not whether an item can be scanned.
+
+`products.criticality` and `products.ownership` (0024) record how hard an item
+is chased and whether it is on loan to the club. `asset_units` is a per-unit
+register (serials, condition), not a second ledger.
+
+`scan_codes` is a separate table from `products` (not a column) specifically
+so a damaged label can be reissued a new code, or retired, without touching
+the product. `kind = 'group'` codes (e.g. the resistor book) resolve to a
+location and let the user pick from a list rather than a single product.
 
 **The cart is client-side state, not a DB session.** The Mini App
 (`src/app/store/components/cartReducer.ts`) holds the cart in memory until the
@@ -152,17 +198,19 @@ must never clear the cart on error.
 
 **RLS/security gotchas already hit once** (see `docs/tele-qr/checkpoint.md`
 "Bugs found" for the full list before touching migrations or `is_admin()`):
-`REVOKE` on a Postgres function must also revoke from the implicit `PUBLIC`
-pseudo-role, not just `anon` — role-specific revokes don't override it. Any
-route using the service-role key bypasses RLS entirely, so RLS bugs are
-invisible unless tested against a real authenticated (non-service-role)
-session.
+
+- `REVOKE` on a Postgres function must also revoke from the implicit `PUBLIC`
+  pseudo-role, not just `anon`; role-specific revokes don't override it.
+- Any route using the service-role key bypasses RLS entirely, so RLS bugs are
+  invisible unless tested against a real authenticated (non-service-role)
+  session. `scripts/sql/rehearse-0024-rls.sql` does that, and rolls back.
 
 ## Conventions
 
 - Path alias `@/*` → `src/*` (`tsconfig.json`, mirrored in `vitest.config.ts`).
 - Migrations in `supabase/migrations/` are numbered and additive — add a new
-  numbered file rather than editing an applied one.
+  numbered file rather than editing an applied one — and every one is applied
+  to both `public` and `test` (`scripts/migrate.ts`).
 - `docs/tele-qr/*.md` files each open with a TL;DR and close with their own
   open questions; check those before assuming a design decision is settled.
 
