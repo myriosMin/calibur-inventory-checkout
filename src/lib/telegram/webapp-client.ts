@@ -16,6 +16,8 @@
 export interface WebAppClient {
   initData: string;
   startParam: string | null;
+  /** Unsigned first + last name, only for prefilling a form. Never identity. */
+  telegramName: string | null;
   showScanQrPopup(opts: { text?: string }, onScan: (raw: string) => boolean): void;
   closeScanQrPopup(): void;
   ready(): void;
@@ -24,7 +26,10 @@ export interface WebAppClient {
 
 interface TelegramWebAppNative {
   initData: string;
-  initDataUnsafe?: { start_param?: string };
+  initDataUnsafe?: {
+    start_param?: string;
+    user?: { first_name?: string; last_name?: string };
+  };
   showScanQrPopup?: (
     params: { text?: string },
     callback?: (text: string) => boolean | void,
@@ -76,10 +81,19 @@ export function parseStartAppCode(raw: string): string | null {
   return trimmed;
 }
 
+function nameFromUnsafeUser(user?: { first_name?: string; last_name?: string }): string | null {
+  const name = [user?.first_name, user?.last_name]
+    .filter((part): part is string => Boolean(part && part.trim()))
+    .join(" ")
+    .trim();
+  return name || null;
+}
+
 function createRealWebApp(nativeWebApp: TelegramWebAppNative): WebAppClient {
   return {
     initData: nativeWebApp.initData ?? "",
     startParam: nativeWebApp.initDataUnsafe?.start_param ?? null,
+    telegramName: nameFromUnsafeUser(nativeWebApp.initDataUnsafe?.user),
     showScanQrPopup(opts, onScan) {
       nativeWebApp.showScanQrPopup?.(opts, (text) => onScan(text));
     },
@@ -111,6 +125,7 @@ function createDevMockWebApp(): WebAppClient {
   return {
     initData: process.env.NEXT_PUBLIC_DEV_MOCK_INIT_DATA ?? "",
     startParam: readMockStartParam(),
+    telegramName: null,
     showScanQrPopup(opts, onScan) {
       for (;;) {
         const result = window.prompt(opts.text ?? "Simulate QR scan (dev mock)");

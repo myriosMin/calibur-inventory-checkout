@@ -5,11 +5,12 @@ inside Telegram — no separate app or login.
 
 ## First time
 
-Message the bot and send `/start`. If your handle matches a `members` row,
-you're bound immediately. If not, you're told to ask a committee member —
-you've landed in the admin bind queue and someone needs to bind you by hand
-(this happens to 10–20% of people, usually no Telegram username set, or a
-changed handle).
+Get a join code from a committee member. Scan the QR they show you, or
+message the bot `/start` and tap **Join**. Enter the code, your full name and
+NUS email, accept the notice, and you're in. If you're already on the club
+roster, you're linked to that record. If your handle was already on the
+roster, `/start` alone links you. If the app says a committee member needs to
+link you, you're in their bind queue.
 
 ## Borrowing
 

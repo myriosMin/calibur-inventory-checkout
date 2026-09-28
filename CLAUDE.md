@@ -161,6 +161,9 @@ not being built).
   `members` row via `telegram_user_id`, and only then uses the Supabase
   **service role** (bypasses RLS) to read/write. Never trust
   `initDataUnsafe`/client-supplied identity for anything security-relevant.
+  The one exception is `/api/store/join`, whose caller is not a member yet.
+  It verifies `initData` itself and then calls `join_with_code` (0026),
+  which is gated by an admin-issued join code.
 - **`/admin` uses Supabase email auth.** `src/middleware.ts` only checks
   "is there a session". Access is enforced by RLS on every query the admin
   browser client makes (`src/lib/supabase/browser.ts`); there is no bespoke

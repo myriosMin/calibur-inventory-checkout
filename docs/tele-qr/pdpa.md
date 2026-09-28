@@ -8,8 +8,10 @@
   and a borrowing history. **PDPA still applies** — just lightly.
 - **Telegram is a foreign service.** Message content is minimal, but members
   should be told the bot is the interface and Telegram sees the messages.
-- Members are **admin-provisioned, never self-enrolled** — so there's no
-  consent-at-scale problem, just a notice at club registration.
+- Members join **only with an admin-issued join code** (N people, M minutes).
+  They see the notice in the join form and must accept it. Acceptance is
+  recorded as `members.notice_accepted_at`. Roster-imported members still get
+  the notice at club registration.
 - Deletion on leaving: clear `telegram_user_id`, deactivate, retain the
   inventory history (club records, not personal profiling).
 - **Annual review at the start of the academic year**, owned by a named
@@ -43,8 +45,10 @@ purpose limitation, not as something to mine.
 
 **Notification.** Members are told at club registration that their Telegram
 handle will be used for the parts system and that their borrowing is logged.
-One paragraph in the existing registration form — no separate consent flow
-needed, because there's no sensitive data.
+One paragraph in the existing registration form. Members who join with a code
+see the same paragraph in the Mini App join form
+(`src/app/store/components/JoinForm.tsx`) and must tick it before submitting.
+The time they accepted is stored on their row. Keep the two texts in step.
 
 **Purpose limitation.** The stated purpose is *inventory tracking for the club
 parts store*. Not attendance, not activity monitoring, not performance review.
@@ -64,6 +68,7 @@ and ask an admin to correct an error.
 | Member record | Deactivated on leaving; kept for historical attribution |
 | Borrowing history | Retained as club inventory records |
 | `telegram_bind_attempts` | 90 days, then purged |
+| `join_code_attempts` | 90 days, then purged (same cron) |
 
 Rationale for keeping history: "who had the Livox LiDAR in 2026" is a legitimate
 club record, and stripping it would make the ledger useless for its actual
@@ -110,9 +115,10 @@ Binding on the implementation:
 2. **Validate `initData` on every API request.** Identity comes from the
    verified HMAC, never from client-supplied fields. See
    [architecture.md](architecture.md).
-3. **Members cannot self-enroll.** Admin provisioning is both an access control
-   and a data-minimisation measure — unrecognised users get refused rather than
-   having a record created for them.
+3. **No open self-enrolment.** A record is created only for someone holding a
+   live admin-issued join code (0026: use-limited, time-limited, revocable,
+   every attempt logged). Anyone else is refused rather than having a record
+   created for them. A typed email never links someone to a staff account.
 4. **RLS enforces that members read only their own history.** Not left to
    application code.
 5. **Deactivation is immediate and effective.** Clearing the binding must lock

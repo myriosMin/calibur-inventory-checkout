@@ -126,6 +126,101 @@ export type Database = {
           },
         ]
       }
+      join_code_attempts: {
+        Row: {
+          code_entered: string
+          created_at: string
+          id: number
+          join_code_id: string | null
+          member_id: string | null
+          outcome: string
+          telegram_user_id: number
+          telegram_username: string | null
+        }
+        Insert: {
+          code_entered: string
+          created_at?: string
+          id?: number
+          join_code_id?: string | null
+          member_id?: string | null
+          outcome: string
+          telegram_user_id: number
+          telegram_username?: string | null
+        }
+        Update: {
+          code_entered?: string
+          created_at?: string
+          id?: number
+          join_code_id?: string | null
+          member_id?: string | null
+          outcome?: string
+          telegram_user_id?: number
+          telegram_username?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "join_code_attempts_join_code_id_fkey"
+            columns: ["join_code_id"]
+            isOneToOne: false
+            referencedRelation: "join_codes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "join_code_attempts_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      join_codes: {
+        Row: {
+          code: string
+          created_at: string
+          created_by: string | null
+          expires_at: string
+          id: string
+          max_uses: number
+          note: string | null
+          revoked_at: string | null
+          used_count: number
+          valid_minutes: number
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          created_by?: string | null
+          expires_at: string
+          id?: string
+          max_uses: number
+          note?: string | null
+          revoked_at?: string | null
+          used_count?: number
+          valid_minutes: number
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string
+          id?: string
+          max_uses?: number
+          note?: string | null
+          revoked_at?: string | null
+          used_count?: number
+          valid_minutes?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "join_codes_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       locations: {
         Row: {
           created_at: string
@@ -162,8 +257,10 @@ export type Database = {
           display_name: string | null
           full_name: string
           id: string
+          join_code_id: string | null
           joined_at: string | null
           left_at: string | null
+          notice_accepted_at: string | null
           nus_email: string | null
           role: string
           telegram_bound_at: string | null
@@ -176,8 +273,10 @@ export type Database = {
           display_name?: string | null
           full_name: string
           id?: string
+          join_code_id?: string | null
           joined_at?: string | null
           left_at?: string | null
+          notice_accepted_at?: string | null
           nus_email?: string | null
           role?: string
           telegram_bound_at?: string | null
@@ -190,15 +289,25 @@ export type Database = {
           display_name?: string | null
           full_name?: string
           id?: string
+          join_code_id?: string | null
           joined_at?: string | null
           left_at?: string | null
+          notice_accepted_at?: string | null
           nus_email?: string | null
           role?: string
           telegram_bound_at?: string | null
           telegram_user_id?: number | null
           telegram_username?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "members_join_code_id_fkey"
+            columns: ["join_code_id"]
+            isOneToOne: false
+            referencedRelation: "join_codes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       products: {
         Row: {
@@ -776,6 +885,17 @@ export type Database = {
       }
       is_admin: { Args: never; Returns: boolean }
       is_staff: { Args: never; Returns: boolean }
+      join_with_code: {
+        Args: {
+          p_code: string
+          p_display_name: string
+          p_email: string
+          p_full_name: string
+          p_telegram_user_id: number
+          p_telegram_username: string
+        }
+        Returns: Json
+      }
       submit_cart: {
         Args: {
           p_client_token?: string

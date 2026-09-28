@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 
+import { buildJoinUrl } from "@/lib/join/code";
 import { getMemberHoldings } from "@/lib/server/member-activity";
 import { findMemberByTelegramUserId, memberDisplayName } from "@/lib/server/member-lookup";
 import { sendMessageSafely } from "@/lib/telegram/bot-api";
 import {
   buildFallbackText,
   buildHelpText,
+  buildJoinPromptText,
   buildMyItemsText,
   buildUnknownMemberText,
   routeMessage,
@@ -189,8 +191,34 @@ async function handleStart(message: TelegramMessage, startArgs: string) {
     return ack();
   }
 
-  await sendMessageSafely(chatId, buildUnknownMemberText());
+  await sendJoinPrompt(chatId);
   return ack();
+}
+
+/**
+ * The Join button opens the Mini App's join form through the same kind of
+ * direct link a sticker uses, so Telegram hands the form signed initData.
+ * Without configured names there is no link to build; the plain refusal
+ * still tells them what to do.
+ */
+async function sendJoinPrompt(chatId: number) {
+  let joinUrl: string | null = null;
+  try {
+    joinUrl = buildJoinUrl(
+      process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "",
+      process.env.NEXT_PUBLIC_TELEGRAM_MINIAPP_NAME ?? "",
+    );
+  } catch (error) {
+    console.error("[/api/tg/webhook] Can't build the join link:", error);
+  }
+
+  if (!joinUrl) {
+    await sendMessageSafely(chatId, buildUnknownMemberText());
+    return;
+  }
+  await sendMessageSafely(chatId, buildJoinPromptText(), {
+    inlineKeyboard: [[{ text: "Join", url: joinUrl }]],
+  });
 }
 
 /**

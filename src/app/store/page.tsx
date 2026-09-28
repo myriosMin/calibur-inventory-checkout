@@ -6,8 +6,10 @@ import { useRouter } from "next/navigation";
 import Button from "@/components/ui/Button";
 import Sheet from "@/components/ui/Sheet";
 import { IconCamera } from "@/components/ui/icons";
+import { parseJoinStartParam } from "@/lib/join/code";
 import { getWebApp, parseStartAppCode } from "@/lib/telegram/webapp-client";
 
+import JoinForm from "./components/JoinForm";
 import SearchSheet, { type SearchProduct } from "./components/SearchSheet";
 
 /**
@@ -65,13 +67,36 @@ type ViewState =
   | { name: "top-level" }
   | { name: "group-pick"; location: ResolveLocationPayload; products: PendingScanProduct[] }
   | { name: "retired" }
+  /** Not a member yet. `resume` is the scan code to resolve once they've joined. */
+  | { name: "join"; code: string; resume: string | null }
   | { name: "error"; message: string };
+
+async function fetchMembershipStatus(
+  rawInitData: string,
+): Promise<"member" | "not_registered" | "inactive" | null> {
+  try {
+    const res = await fetch("/api/store/join", {
+      headers: { "X-Telegram-Init-Data": rawInitData },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { status?: string };
+    return data.status === "member" || data.status === "not_registered" || data.status === "inactive"
+      ? data.status
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+const INACTIVE_MESSAGE =
+  "Your membership is deactivated. Ask a committee member to reactivate it.";
 
 export default function StorePage() {
   const router = useRouter();
   const [view, setView] = useState<ViewState>({ name: "loading" });
   const [searchOpen, setSearchOpen] = useState(false);
   const [initData, setInitData] = useState("");
+  const [telegramName, setTelegramName] = useState<string | null>(null);
 
   const goToBorrow = useCallback(
     (code: string | null, product: PendingScanProduct) => {
@@ -104,6 +129,17 @@ export default function StorePage() {
         if (res.status === 404) {
           setView({ name: "retired" });
           return;
+        }
+        if (res.status === 403) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          if (body.error === "not_registered") {
+            setView({ name: "join", code: "", resume: code });
+            return;
+          }
+          if (body.error === "inactive") {
+            setView({ name: "error", message: INACTIVE_MESSAGE });
+            return;
+          }
         }
         if (!res.ok) {
           setView({ name: "error", message: `Couldn't resolve that code (${res.status}).` });
@@ -145,10 +181,24 @@ export default function StorePage() {
     }
 
     setInitData(webApp.initData);
+    setTelegramName(webApp.telegramName);
 
     const startParam = webApp.startParam;
-    if (!startParam) {
-      setView({ name: "top-level" });
+
+    // Opened from a join link, or from the menu with no scan: ask whether
+    // they are a member first. A scan skips this -- resolve's own 403 routes
+    // a non-member here, so the common case costs no extra request.
+    const joinCode = parseJoinStartParam(startParam);
+    if (joinCode !== null || !startParam) {
+      void fetchMembershipStatus(webApp.initData).then((status) => {
+        if (status === "not_registered") {
+          setView({ name: "join", code: joinCode ?? "", resume: null });
+        } else if (status === "inactive") {
+          setView({ name: "error", message: INACTIVE_MESSAGE });
+        } else {
+          setView({ name: "top-level" });
+        }
+      });
       return;
     }
 
@@ -212,6 +262,21 @@ export default function StorePage() {
       <main className="flex min-h-dvh items-center justify-center p-6">
         <p className="text-sm text-neutral-400">Loading…</p>
       </main>
+    );
+  }
+
+  if (view.name === "join") {
+    const resume = view.resume;
+    return (
+      <JoinForm
+        initData={initData}
+        initialCode={view.code}
+        defaultName={telegramName}
+        onJoined={() => {
+          if (resume) void resolveCode(initData, resume);
+          else setView({ name: "top-level" });
+        }}
+      />
     );
   }
 

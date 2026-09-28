@@ -138,16 +138,30 @@ spreadsheet records as `a lot`.
 
 ## 5. Identity binding
 
-Runs in the bot webhook, not the Mini App.
+Two entry points. The join code is the normal one.
 
 ```
-/start (first contact)
+Join code (Mini App, /api/store/join -> join_with_code, 0026)
+  scan an admin's join QR, open the Join button, or get routed here by a
+  403 not_registered on the first scan
+  → form: code, full name, NUS email, accept the notice
+  → code must be live: not revoked, not expired, uses left (row-locked)
+      ├─ email / verified handle matches an unlinked `member` row → link it
+      ├─ nothing matches                                  → create a member
+      ├─ email linked to another Telegram account         → refused
+      └─ staff row, deactivated, or ambiguous             → bind queue
+  → every attempt logged in join_code_attempts; a scanned code resumes after joining
+
+/start (bot webhook)
   → look up member by normalised handle (lowercase, strip @)
       ├─ hit  → bind telegram_user_id, set telegram_bound_at
       │         → "Welcome, Alex. You're all set."
-      └─ miss → "I don't recognise you — ask a committee member to add you."
+      └─ miss → "I don't recognise you yet…" + a Join button (Mini App, startapp=join)
                 → row in telegram_bind_attempts (the admin bind queue)
 ```
+
+With join codes, the two failure cases below don't matter for anyone who has a
+code. They still apply to roster-imported members who only ever send `/start`.
 
 Two failure cases that **will** happen and must be designed for:
 

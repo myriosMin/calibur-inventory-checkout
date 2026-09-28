@@ -29,7 +29,8 @@ See [borrow-and-return.md](borrow-and-return.md).
 
 | Feature | Status | Notes |
 |---|---|---|
-| `/start` identity binding | Built | Matches on normalised handle, binds `telegram_user_id`. |
+| Join codes (self-service onboarding) | Built | `/admin/join-codes` issues a code valid for N people within M minutes; the Mini App join form links or creates the member (`join_with_code`, 0026). Every attempt logged. |
+| `/start` identity binding | Built | Matches on normalised handle, binds `telegram_user_id`; otherwise replies with a Join button. |
 | Bind queue for unmatched users | Built | `telegram_bind_attempts`, resolved in `/admin/bind-queue`. |
 | `/myitems`, `/help` | Built | |
 | Silent in group chats unless `@mentioned` | Built | Needed once the bot joins the club group for alerts. |

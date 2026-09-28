@@ -4,6 +4,7 @@ import {
   buildFallbackText,
   buildHelpText,
   buildMyItemsText,
+  buildJoinPromptText,
   buildUnknownMemberText,
   parseCommand,
   routeMessage,
@@ -141,6 +142,7 @@ describe("help and fallback text", () => {
       buildHelpText(),
       buildFallbackText(),
       buildUnknownMemberText(),
+      buildJoinPromptText(),
       buildMyItemsText([holder("Hero", [["GM6020", 2, "pcs"]])]),
     ];
     for (const text of texts) {

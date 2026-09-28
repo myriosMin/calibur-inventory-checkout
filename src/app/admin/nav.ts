@@ -20,6 +20,7 @@ export const NAV_LINKS: NavLink[] = [
   { href: "/admin/products", label: "Products" },
   { href: "/admin/holders", label: "Holders", adminOnly: true },
   { href: "/admin/members", label: "Members", adminOnly: true },
+  { href: "/admin/join-codes", label: "Join codes", adminOnly: true },
   { href: "/admin/scan-codes", label: "Scan codes", adminOnly: true },
   { href: "/admin/bind-queue", label: "Bind queue", adminOnly: true },
   { href: "/admin/restock", label: "Restock" },

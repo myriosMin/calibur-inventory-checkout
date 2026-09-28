@@ -52,16 +52,22 @@ location order.
 Clean with IPA first. A label applied over flux residue lifts within weeks, and
 re-labelling is slower than labelling.
 
-### 1.3 Member provisioning (~1 hr for 120 members)
+### 1.3 Member provisioning (~15 min per intake)
 
-Handles are already collected at club registration, so this is a bulk import,
-not a per-person session. Import the roster with normalised handles
-(lowercase, strip `@`), and members bind themselves on first scan.
+**Join codes are the normal path** (`/admin/join-codes`, see
+[HOW_TOs/members-and-roles.md](HOW_TOs/members-and-roles.md)). At a briefing,
+an admin creates a code for about the number of people in the room, puts its
+QR on the screen, and everyone joins themselves in a minute: code, name, NUS
+email, accept the notice. Nobody has to collect Telegram handles in advance,
+so the old "~10–20% fail the automatic bind" step mostly disappears. Anyone
+whose email or verified handle matches an unlinked roster row is linked to it
+instead of duplicated.
 
-Expect **~10–20% to fail the automatic bind** — no username set, or handle
-changed since registration. They land in the dashboard's bind queue and an
-admin resolves each in one click. Budget an hour of queue-clearing in the first
-fortnight.
+The roster CSV import still exists. Use it when the club's records should come
+first, such as a legacy member list with loans attached. Its members bind on
+`/start` by handle, or with a code by email. The bind queue now holds only the
+cases a code can't resolve safely: staff rows, deactivated members, and
+ambiguous matches.
 
 Compare: the CV approach needs ~3 hours of in-person face capture plus consent
 for the same roster.
@@ -88,7 +94,7 @@ Worth stating explicitly, since it's most of the difference in setup cost:
 
 | Task | Cadence | Effort/yr | Owner |
 |---|---|---|---|
-| Provision new members | Each intake (~2×/yr) | ~1 hr | Admin |
+| Provision new members (join codes) | Each intake (~2×/yr) | ~0.5 hr | Admin |
 | Clear the bind queue | As it fills | ~1 hr | Admin |
 | Offboard leavers | Annually | ~1 hr | Admin |
 | **Add new products** (create, label, stick) | ~100 SKUs/yr | **~8 hrs** | Logistics lead |

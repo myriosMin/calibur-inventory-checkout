@@ -326,6 +326,22 @@ export async function GET(request: Request) {
     }
   }
 
+  // join_code_attempts holds the same kind of data (Telegram ids of people
+  // who may never have become members), so it gets the same 90 days.
+  let joinAttemptsPurged: number | null = null;
+  if (!dryRun) {
+    const { data, error } = await db
+      .from("join_code_attempts")
+      .delete()
+      .lt("created_at", purgeCutoff)
+      .select("id");
+    if (error) {
+      console.error("[cron] Failed to purge join_code_attempts:", error.message);
+    } else {
+      joinAttemptsPurged = data?.length ?? 0;
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     dryRun,
@@ -363,6 +379,7 @@ export async function GET(request: Request) {
       table: "telegram_bind_attempts",
       olderThanDays: BIND_ATTEMPT_RETENTION_DAYS,
       deleted: purged,
+      joinAttemptsDeleted: joinAttemptsPurged,
     },
   });
 }

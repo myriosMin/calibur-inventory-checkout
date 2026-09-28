@@ -1,7 +1,38 @@
 # Members and roles (admin guide)
 
-Covers `/admin/members` and `/admin/bind-queue`. Admin only — procurement
-accounts don't see these pages.
+Covers `/admin/join-codes`, `/admin/members` and `/admin/bind-queue`. Admin
+only — procurement accounts don't see these pages.
+
+## Onboarding with a join code (the normal way)
+
+1. `/admin/join-codes` → set how many people and how many minutes (default
+   10 people, 5 minutes), add a note like "Freshmen briefing", **Create code**.
+2. Put the QR on a screen, or read the code out (`ABCD-EF23`).
+3. Each person scans the QR, or messages the bot `/start` and taps **Join**.
+   The Mini App asks for the code, their full name and NUS email, and shows
+   the PDPA notice. They tick it and submit. They can borrow straight away.
+4. Watch the count go up. **Revoke now** closes the code early.
+
+What happens to each submission:
+
+- **Email or verified Telegram handle matches an unlinked roster row** (role
+  `member`): that row is linked. The roster's own name is kept, and legacy
+  loans stay with them. No duplicate is created.
+- **Nothing matches**: a new `member` is created with what they typed.
+- **Email already linked to another Telegram account**: refused.
+- **Matches a staff row (admin/procurement), a deactivated member, or two
+  different rows**: refused and put in the bind queue for you to link by hand.
+  A typed email proves nothing, so staff are never linked this way.
+
+**Checking for a leak.** The use limit only caps the damage. The
+**Tried after close** column is what shows a leak: it counts attempts made
+after a code expired, ran out or was revoked. A couple are latecomers. Many
+means the code travelled. The Attempts table shows every try with its Telegram
+id and result, and each joined member links to their record, so you can
+offboard anyone who shouldn't be there. Five wrong codes in 15 minutes locks a
+Telegram account out for that window. Attempt rows are purged after 90 days,
+like bind attempts. `members.join_code_id` permanently records which code
+each person joined with.
 
 ## Importing a roster
 
@@ -25,10 +56,15 @@ is created automatically.
 
 ## The bind queue
 
-Expect 10–20% of imported members to fail automatic binding on first
-`/start` — no Telegram username set, or it changed since they registered.
-They land in `/admin/bind-queue` with their Telegram display name and user
-id. Match them to the right `members` row and bind in one click.
+With join codes this should stay short. It fills from two places:
+
+- `/start` from someone whose handle matches no roster row. They are also
+  offered the Join button.
+- A join the code couldn't safely resolve (see above). These show the full
+  name they typed.
+
+Match them to the right `members` row and bind in one click. Joining with a
+code later resolves any rows they left here.
 
 The queue also doubles as an abuse log — anyone who scans a sticker out of
 curiosity and isn't a member shows up here too, harmlessly.

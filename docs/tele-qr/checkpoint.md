@@ -30,6 +30,29 @@ Two things stand between here and real use, and neither is code:
 
 ---
 
+## Join codes — self-service onboarding (2026-09-28)
+
+Migration `0026_join_codes.sql` is applied to both schemas.
+
+- An admin issues a code at `/admin/join-codes`: N people, M minutes,
+  revocable, with a QR. The expiry is set from the database clock.
+- New people join in the Mini App with the code, their name and NUS email,
+  and accept the PDPA notice. `join_with_code` is service-role only and
+  row-locks the code, so the last use can't be taken twice. It links to an
+  existing unlinked `member` row by email or verified handle, and creates a
+  new member only if nothing matches.
+- It never links staff rows by typed email. Ambiguous cases go to the bind
+  queue.
+- Every attempt is logged in `join_code_attempts` (purged after 90 days by the
+  daily cron). `members.join_code_id` and `members.notice_accepted_at` are
+  permanent.
+- Five failures in 15 minutes rate-limits a Telegram account.
+- `/start` from an unknown user now replies with a Join button.
+- The pdpa.md rule "members cannot self-enroll" is reworded: no open
+  enrolment, only with a live admin-issued code.
+- Not yet tried on a real phone: the join form, and the bot's inline URL
+  button opening the Mini App with `startapp=join`.
+
 ## What was built this pass (Phases 4–6)
 
 Nine migrations (`0015`–`0023`) plus six feature areas.

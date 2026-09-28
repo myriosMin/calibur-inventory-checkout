@@ -8,7 +8,21 @@
  * whole request, since the inbound webhook was already processed correctly
  * regardless of whether the reply went out.
  */
-export async function sendMessage(chatId: number, text: string): Promise<void> {
+export interface InlineUrlButton {
+  text: string;
+  url: string;
+}
+
+export interface SendMessageOptions {
+  /** One row per inner array, rendered under the message. */
+  inlineKeyboard?: InlineUrlButton[][];
+}
+
+export async function sendMessage(
+  chatId: number,
+  text: string,
+  options: SendMessageOptions = {},
+): Promise<void> {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!botToken) {
     throw new Error("Missing TELEGRAM_BOT_TOKEN. Check .env.local.");
@@ -19,7 +33,13 @@ export async function sendMessage(chatId: number, text: string): Promise<void> {
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text }),
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        ...(options.inlineKeyboard
+          ? { reply_markup: { inline_keyboard: options.inlineKeyboard } }
+          : {}),
+      }),
     },
   );
 
@@ -44,9 +64,13 @@ export async function sendMessage(chatId: number, text: string): Promise<void> {
  * healthy-looking cron response while Telegram rejected every message is how
  * a scheduled job stops working without anyone noticing.
  */
-export async function sendMessageSafely(chatId: number, text: string): Promise<boolean> {
+export async function sendMessageSafely(
+  chatId: number,
+  text: string,
+  options: SendMessageOptions = {},
+): Promise<boolean> {
   try {
-    await sendMessage(chatId, text);
+    await sendMessage(chatId, text, options);
     return true;
   } catch (error) {
     console.error("[telegram] Failed to send message:", error);

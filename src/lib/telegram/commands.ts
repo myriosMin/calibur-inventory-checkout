@@ -179,5 +179,10 @@ export function buildMyItemsText(holders: MemberHolderHoldings[]): string {
  * wording as the /start refusal: a member whose binding was cleared must get
  * the same actionable answer whichever command they reach for. */
 export function buildUnknownMemberText(): string {
-  return "I don't recognise you — ask a committee member to add you.";
+  return "I don't recognise you yet. Ask a committee member for a join code, then send /start and tap Join.";
+}
+
+/** `/start` from someone new: the same answer, plus the button that acts on it. */
+export function buildJoinPromptText(): string {
+  return "I don't recognise you yet. If a committee member gave you a join code, tap Join below and enter it.";
 }
