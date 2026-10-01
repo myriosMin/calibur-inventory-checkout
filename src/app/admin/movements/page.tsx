@@ -457,9 +457,9 @@ export default function AdminMovementsPage() {
                       {reversed ? <StatusPill tone="warning">reversed</StatusPill> : null}
                     </div>
                     <p className="mt-1 text-neutral-400">
-                      {holderLabel(row.from_holder)} <span className="text-neutral-600">→</span> {holderLabel(row.to_holder)}
+                      {holderLabel(row.from_holder)} <span className="text-neutral-500">→</span> {holderLabel(row.to_holder)}
                     </p>
-                    <p className="mt-0.5 text-xs text-neutral-600">
+                    <p className="mt-0.5 text-xs text-neutral-500">
                       #{row.id} · {new Date(row.created_at).toLocaleString()} · {actorLabel(row)}
                       {row.entry_method ? ` · ${row.entry_method}` : ""}
                       {row.scan_code ? ` · ${row.scan_code}` : ""}

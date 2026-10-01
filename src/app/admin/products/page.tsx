@@ -171,7 +171,7 @@ function Products() {
         return (
           <span className={bucket === "low" ? "text-amber-400" : bucket === "empty" ? "text-neutral-500" : "text-neutral-100"}>
             {row.qtyInStore}
-            {row.min_stock !== null ? <span className="text-xs text-neutral-600"> / {row.min_stock}</span> : null}
+            {row.min_stock !== null ? <span className="text-xs text-neutral-500"> / {row.min_stock}</span> : null}
           </span>
         );
       },

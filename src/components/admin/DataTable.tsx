@@ -147,7 +147,7 @@ export default function DataTable<T>({
             className="cursor-pointer rounded-lg px-3 py-1.5 text-sm text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100"
           >
             Show {Math.min(hidden, pageSize)} more
-            <span className="text-neutral-600"> · {rows.length} total</span>
+            <span className="text-neutral-500"> · {rows.length} total</span>
           </button>
         </div>
       ) : null}

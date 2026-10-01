@@ -301,7 +301,7 @@ export default function AdminMemberEditPage({
                     >
                       <span className="truncate text-neutral-200">{line.name}</span>
                       <span className="tabular-nums text-neutral-400">
-                        {line.qty} <span className="text-neutral-600">{line.unit}</span>
+                        {line.qty} <span className="text-neutral-500">{line.unit}</span>
                       </span>
                     </Link>
                   </li>

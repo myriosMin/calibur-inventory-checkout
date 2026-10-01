@@ -124,7 +124,7 @@ function ReviewItemRow({
 
       {open ? (
         <div className={`flex flex-col gap-3 px-4 pb-4 ${onToggle ? "pl-11" : "pt-2"}`}>
-          <p className="text-xs uppercase tracking-wide text-neutral-600">
+          <p className="text-xs uppercase tracking-wide text-neutral-500">
             {item.entity}
             {productName && item.product_id ? (
               <>

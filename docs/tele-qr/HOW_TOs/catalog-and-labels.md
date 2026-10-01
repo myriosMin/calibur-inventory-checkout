@@ -9,7 +9,7 @@ and print labels; only admins can manage scan codes directly
 This has to stay under 5 minutes or the catalog rots — treat it as a hard
 requirement, not a nice-to-have.
 
-1. `/admin/products` → create. Fill in name, tier (`asset` / `bulk` /
+1. `/admin/products` → **New product** (opens a side panel). Fill in name, tier (`asset` / `bulk` /
    `loose`), category, location, and spec if it matters (value, package,
    tolerance — used by search and the resistor-book group picker).
 2. `/admin/labels` → generate and print a label for it (see below).
@@ -57,21 +57,20 @@ code.
 
 ## Managing scan codes (`/admin/scan-codes`, admin only)
 
-- **Generate code** — creates a new opaque code for a product or a group
+- **New code** — creates a new opaque code for a product or a group
   location.
-- **Regenerate** — creates a replacement code for the same target and retires
+- **Regenerate** (the row's **⋯** menu) — creates a replacement code for the same target and retires
   the old one. Use this for a damaged label rather than editing the existing
   code; the old sticker then fails cleanly ("this label is retired") instead
   of silently working.
-- **Retire** — deactivates a code without deleting it, so a stray old sticker
+- **Retire** (the row's **⋯** menu) — deactivates a code without deleting it, so a stray old sticker
   found later gives a clean rejection.
 
 Codes are never reused, and retiring one doesn't touch the product record.
 
 ## Watching for label problems
 
-The dashboard's **label health** card lists products reached by search far
-more than by scan — that's the signal a sticker is missing or damaged.
-Reprint from there rather than waiting for a complaint. The **unknown/retired
-codes** card catches stickers still being scanned after their code was
-retired.
+The dashboard's **Needs attention** list says how many labels look missing
+or damaged (products reached by search far more than by scan) and how many
+unknown or retired codes are still being scanned. Each line links to where
+you fix it: reprint from **Labels** rather than waiting for a complaint.

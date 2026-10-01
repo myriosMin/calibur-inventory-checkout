@@ -30,6 +30,53 @@ Two things stand between here and real use, and neither is code:
 
 ---
 
+## Admin redesign (2026-10-01)
+
+The `/admin` dashboard was rebuilt for fewer clicks and less noise. No schema
+or RLS changes.
+
+- **Navigation.** A grouped left sidebar replaces the 13-link top bar:
+  - 9 entries in total; related pages share an entry and show as section tabs
+    (`src/app/admin/nav.ts`, `AdminShell.tsx`). People covers members, join
+    codes and the bind queue; Stock covers holdings and movements; Labels
+    covers print sheets and scan codes. Every URL is unchanged.
+  - The sidebar collapses to an icon rail, and becomes a drawer on phones.
+  - Badges show open review items and bind-queue depth.
+- **Pages.**
+  - There is one primary action per page. Create and edit forms open in a
+    side drawer instead of sitting open.
+  - Secondary row actions go in a "⋯" menu. Long explanations moved behind (i)
+    tips.
+  - Chips with counts act as both summary and filter.
+- **Charts.**
+  - Recharts, lazy-loaded, for the two time series: dashboard activity and
+    movements per day. Clicking a day in the movements chart filters the
+    ledger to it.
+  - Plain HTML/SVG for bar lists, proportion bars, diverging variance bars
+    and sparklines.
+  - Colours are the dataviz reference palette, validated against the card
+    surface (`globals.css`, `components/admin/charts/theme.ts`).
+- **Data.**
+  - SWR (`src/lib/admin/queries.ts`) caches products, locations, holders,
+    members, scan codes, holdings, stock levels and counts under the admin
+    layout, so page switches reuse them.
+  - Writes revalidate one key, or put the returned row straight into the
+    cache. Restock search and the bind-queue member picker filter cached
+    lists locally, with no request per keystroke.
+- **Fixed: silent 1000-row truncation.**
+  - Report reads asked for `.limit(20000)`, but PostgREST clamps every limit
+    to `max_rows` (1000). `public.holdings` already had 1088 rows, so
+    `/admin/holdings` and the cron reports (`lib/reports/queries.ts`) were
+    short without saying so.
+  - Every list read now pages through `fetchAllRows` on a unique sort key, so
+    `truncationNotice` is gone.
+  - Holdings counts were checked against the database: 1088 of 1088.
+- **Fixed: procurement role on member detail.** The page's role list was
+  `member | admin`, so a procurement member could not be saved there.
+- **Fixed: pseudo-holder negatives.** Holdings no longer counts the
+  consumed/adjustment pseudo-holders as negative balances. They are negative
+  by design: the Adjustment holder is the source of every opening balance.
+
 ## Join codes — self-service onboarding (2026-09-28)
 
 Migration `0026_join_codes.sql` is applied to both schemas.

@@ -201,7 +201,7 @@ export default function AdminJoinCodesPage() {
       render: (code) => (
         <span>
           {code.used_count}
-          <span className="text-neutral-600"> / {code.max_uses}</span>
+          <span className="text-neutral-500"> / {code.max_uses}</span>
         </span>
       ),
     },
@@ -211,7 +211,7 @@ export default function AdminJoinCodesPage() {
       className: "tabular-nums",
       render: (code) => {
         const late = audits.get(code.id)?.lateAttempts ?? 0;
-        return <span className={late > 0 ? "text-amber-400" : "text-neutral-600"}>{late}</span>;
+        return <span className={late > 0 ? "text-amber-400" : "text-neutral-500"}>{late}</span>;
       },
     },
     {
@@ -246,7 +246,7 @@ export default function AdminJoinCodesPage() {
       render: (a) => (
         <>
           {a.telegram_username ? `@${a.telegram_username}` : ""}
-          <span className="ml-2 text-xs text-neutral-600">{a.telegram_user_id}</span>
+          <span className="ml-2 text-xs text-neutral-500">{a.telegram_user_id}</span>
         </>
       ),
     },

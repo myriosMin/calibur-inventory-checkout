@@ -5,13 +5,14 @@ only — procurement accounts don't see these pages.
 
 ## Onboarding with a join code (the normal way)
 
-1. `/admin/join-codes` → set how many people and how many minutes (default
-   10 people, 5 minutes), add a note like "Freshmen briefing", **Create code**.
+1. **People › Join codes** (`/admin/join-codes`) → **New code**, set how many
+   people and how many minutes (default 10 people, 5 minutes), add a note like
+   "Freshmen briefing", **Create code**.
 2. Put the QR on a screen, or read the code out (`ABCD-EF23`).
 3. Each person scans the QR, or messages the bot `/start` and taps **Join**.
    The Mini App asks for the code, their full name and NUS email, and shows
    the PDPA notice. They tick it and submit. They can borrow straight away.
-4. Watch the count go up. **Revoke now** closes the code early.
+4. Watch the count go up. **Close this code now** ends it early.
 
 What happens to each submission:
 

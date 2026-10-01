@@ -25,17 +25,17 @@ Both admin and procurement roles can work the queue.
 
 ## Dashboard observability
 
-`/admin` (the landing page after login). Minimum useful set, read live off
-the ledger:
+`/admin` (the landing page after login), read live off the ledger:
 
-- Sessions per day, by mode
-- Scan-vs-search ratio — a product reached mostly by search has a missing or
-  damaged label
-- Unknown/retired codes scanned, with counts
-- Bind queue depth
-- Stocktake variance by location
-- Label health — products reached by search rather than scan, with a direct
-  reprint link
+- Four headline numbers: open review items, low stock, parts out, sessions
+  in the last 14 days. Each tile links to where you act on it.
+- **Needs attention** — only what is non-zero: bind queue depth, negative
+  store balances, labels to reprint (label health), unknown/retired codes
+  scanned. "All clear" when there is nothing.
+- **Activity** — sessions per day by mode, as a stacked bar chart.
+- **Scan vs search** — share of member entries reached by scan; a product
+  reached mostly by search has a missing or damaged label.
+- **Low stock** against each minimum, and **stocktake variance** by location.
 
 There is no "failed submits" chart, and there isn't going to be one without a
 schema change: a failed submit never reaches the database by design (the cart
@@ -43,8 +43,8 @@ is client state with client-side retry), so nothing persists to count.
 
 ## Exporting data
 
-The dashboard has three CSV exports, generated on demand: catalog, holdings,
-and the full movement ledger. Use these for a committee handover or an
+The dashboard's **Export** menu has three CSVs, generated on demand: catalog,
+holdings, and the full movement ledger. Use these for a committee handover or an
 offline backup — there's no scheduled export, since a file nobody remembers
 to look for isn't useful.
 
