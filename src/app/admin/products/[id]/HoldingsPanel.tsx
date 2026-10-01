@@ -1,111 +1,88 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 
-import DataTable, { type Column } from "@/components/admin/DataTable";
-import { getBrowserClient } from "@/lib/supabase/browser";
-
-interface HoldingRow {
-  holderId: string;
-  name: string;
-  kind: string;
-  qty: number;
-}
+import Skeleton from "@/components/admin/Skeleton";
+import BarList from "@/components/admin/charts/BarList";
+import { useHolders, useHoldings } from "@/lib/admin/queries";
 
 const KIND_ORDER = ["store", "robot", "member", "consumed"];
 
 /**
- * Where this product is, per the ledger (`holdings` view). Read-only on
- * purpose: a wrong number is corrected by counting it in Stocktake, which
- * leaves a record of who counted what, not by typing over it.
+ * Where this product is, per the ledger. Read from the cached, paged
+ * `holdings` and `holders` lists every stock page shares, so opening a
+ * product costs no extra requests.
+ *
+ * Read-only on purpose: a wrong number is corrected by counting it in
+ * Stocktake, which leaves a record of who counted what, not by typing over it.
  */
 export default function HoldingsPanel({ productId, unit }: { productId: string; unit: string }) {
-  const [rows, setRows] = useState<HoldingRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const holdingsQ = useHoldings();
+  const holdersQ = useHolders();
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const supabase = getBrowserClient();
-      const { data: holdings, error: holdingsError } = await supabase
-        .from("holdings")
-        .select("holder_id, qty")
-        .eq("product_id", productId);
-      if (holdingsError) {
-        if (!cancelled) {
-          setError(holdingsError.message);
-          setLoading(false);
-        }
-        return;
-      }
-      const ids = (holdings ?? []).map((h) => h.holder_id).filter((id): id is string => id !== null);
-      const { data: holders, error: holdersError } = ids.length
-        ? await supabase.from("holders").select("id, name, kind").in("id", ids)
-        : { data: [], error: null };
-      if (cancelled) return;
-      if (holdersError) {
-        setError(holdersError.message);
-        setLoading(false);
-        return;
-      }
-      const byId = new Map((holders ?? []).map((h) => [h.id, h]));
-      setRows(
-        (holdings ?? [])
-          .flatMap((h) => {
-            const holder = h.holder_id ? byId.get(h.holder_id) : undefined;
-            if (!holder || holder.kind === "adjustment") return [];
-            return [{ holderId: holder.id, name: holder.name, kind: holder.kind, qty: h.qty ?? 0 }];
-          })
-          .sort(
-            (a, b) =>
-              KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || b.qty - a.qty || a.name.localeCompare(b.name),
-          ),
+  const rows = useMemo(() => {
+    const byId = new Map((holdersQ.data ?? []).map((h) => [h.id, h]));
+    return (holdingsQ.data ?? [])
+      .filter((h) => h.product_id === productId && h.holder_id)
+      .flatMap((h) => {
+        const holder = byId.get(h.holder_id!);
+        if (!holder || holder.kind === "adjustment") return [];
+        return [{ holderId: holder.id, name: holder.name, kind: holder.kind, qty: Number(h.qty ?? 0) }];
+      })
+      .sort(
+        (a, b) =>
+          KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || b.qty - a.qty || a.name.localeCompare(b.name),
       );
-      setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [productId]);
+  }, [holdingsQ.data, holdersQ.data, productId]);
+
+  if (holdingsQ.isLoading || holdersQ.isLoading) return <Skeleton className="h-24 w-full" />;
+  const error = (holdingsQ.error ?? holdersQ.error) as Error | undefined;
+  if (error) return <p className="text-sm text-red-400">{error.message}</p>;
 
   const sumKind = (kind: string) => rows.filter((r) => r.kind === kind).reduce((s, r) => s + r.qty, 0);
-  const store = sumKind("store");
-  const robots = sumKind("robot");
-  const members = sumKind("member");
-  const consumed = sumKind("consumed");
-
-  const columns: Column<HoldingRow>[] = [
-    { key: "name", header: "Holder", render: (r) => <span className="text-neutral-100">{r.name}</span> },
-    { key: "kind", header: "Kind", render: (r) => r.kind },
-    {
-      key: "qty",
-      header: "Qty",
-      className: "text-right tabular-nums",
-      render: (r) => <span className={r.qty < 0 ? "text-red-400" : ""}>{r.qty}</span>,
-    },
+  const tiles = [
+    { label: "In store", value: sumKind("store") },
+    { label: "On robots", value: sumKind("robot") },
+    { label: "With members", value: sumKind("member") },
+    { label: "Used up", value: sumKind("consumed") },
   ];
+  const placed = rows.filter((r) => r.kind !== "consumed");
 
   return (
-    <div className="flex flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-        <p className="text-sm text-neutral-300">
-          {store + robots + members} {unit} on the ledger: {store} in the store, {robots} on robots, {members} with
-          members{consumed ? `, ${consumed} used up so far` : ""}.
-        </p>
-        <Link href="/admin/stocktake" className="text-sm font-medium text-red-400 hover:text-red-300">
-          Wrong? Count it in Stocktake
-        </Link>
-      </div>
-      <DataTable
-        columns={columns}
-        rows={rows}
-        rowKey={(r) => r.holderId}
-        loading={loading}
-        error={error}
-        emptyMessage="Nothing on the ledger yet: no stock has been received, counted or imported."
-      />
+    <div className="flex flex-col gap-4">
+      <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-neutral-800 bg-neutral-800 sm:grid-cols-4">
+        {tiles.map((tile) => (
+          <div key={tile.label} className="bg-neutral-900 px-3 py-2.5">
+            <dt className="text-xs text-neutral-500">{tile.label}</dt>
+            <dd className={`font-display text-xl font-semibold tabular-nums ${tile.value < 0 ? "text-red-400" : "text-neutral-100"}`}>
+              {tile.value}
+              <span className="ml-1 text-xs font-normal text-neutral-500">{unit}</span>
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {placed.length === 0 ? (
+        <p className="text-sm text-neutral-500">Nothing on the ledger yet: no stock has been received, counted or imported.</p>
+      ) : (
+        <BarList
+          ariaLabel="Holders of this product"
+          items={placed.map((row) => ({
+            key: row.holderId,
+            label: (
+              <>
+                {row.name}
+                <span className="ml-2 text-xs text-neutral-500">{row.kind}</span>
+              </>
+            ),
+            value: Math.max(0, row.qty),
+            display: <span className={row.qty < 0 ? "text-red-400" : ""}>{row.qty}</span>,
+          }))}
+        />
+      )}
+      <Link href="/admin/stocktake" className="self-start text-sm text-neutral-500 hover:text-neutral-200">
+        Wrong? Count it in Stocktake →
+      </Link>
     </div>
   );
 }

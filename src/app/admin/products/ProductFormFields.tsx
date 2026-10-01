@@ -32,9 +32,9 @@ interface ProductFormFieldsProps {
   categories: string[];
 }
 
-const INPUT = "rounded-lg border border-neutral-700 px-3 py-2 text-sm";
+const INPUT = "min-h-10 rounded-lg border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100";
 const LABEL = "flex flex-col gap-1 text-sm";
-const CAPTION = "font-medium text-neutral-200";
+const CAPTION = "font-medium text-neutral-300";
 
 /** The product fields, shared by the create form and the edit page. */
 export default function ProductFormFields({
@@ -105,16 +105,16 @@ export default function ProductFormFields({
             value={newLocationName}
             onChange={(e) => setNewLocationName(e.target.value)}
             placeholder="New location name"
-            className="min-w-0 flex-1 rounded-lg border border-neutral-700 px-3 py-1.5 text-xs"
+            className="min-h-9 min-w-0 flex-1 rounded-lg border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 placeholder:text-neutral-600"
           />
           <Button
             type="button"
             variant="secondary"
+            size="sm"
             disabled={creatingLocation || !newLocationName.trim()}
             onClick={handleCreateLocation}
-            className="min-h-0 px-3 py-1.5 text-xs"
           >
-            + New location
+            Add location
           </Button>
         </div>
         {locationError ? <span className="text-xs text-red-400">{locationError}</span> : null}
@@ -133,7 +133,7 @@ export default function ProductFormFields({
             </option>
           ))}
         </select>
-        <span className="text-xs text-neutral-400">{CRITICALITY_HELP[form.criticality]}</span>
+        <span className="text-xs text-neutral-500">{CRITICALITY_HELP[form.criticality]}</span>
       </label>
 
       <label className={LABEL}>
@@ -145,7 +145,7 @@ export default function ProductFormFields({
             </option>
           ))}
         </select>
-        <span className="text-xs text-neutral-400">How it is counted: asset = one by one, bulk = a number, loose = a level only.</span>
+        <span className="text-xs text-neutral-500">How it is counted: asset = one by one, bulk = a number, loose = a level only.</span>
       </label>
 
       <label className={LABEL}>
@@ -244,7 +244,7 @@ export default function ProductFormFields({
           onChange={(e) => onChange({ spec: e.target.value })}
           rows={3}
           placeholder='{"value": "10k", "package": "0805"}'
-          className="rounded-lg border border-neutral-700 px-3 py-2 font-mono text-xs"
+          className="rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 font-mono text-xs text-neutral-100"
         />
       </label>
 

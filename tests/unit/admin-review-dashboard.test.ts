@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { NAV_GROUPS, NAV_ITEMS, activeTabHref, isActive, navItemFor, visibleNavGroups } from "@/app/admin/nav";
 import { criticalityDefaults, EMPTY_PRODUCT_FORM, formToRow } from "@/app/admin/products/product-form";
-import { DEFAULT_PRODUCT_FILTERS, filterProducts, type ProductListRow } from "@/app/admin/products/product-list";
+import { DEFAULT_PRODUCT_FILTERS, filterProducts, stockBucket, type ProductListRow } from "@/app/admin/products/product-list";
 import { EMPTY_UNIT_FORM, unitFormToRow } from "@/app/admin/products/[id]/unit-form";
 import { DEFAULT_REVIEW_FILTERS, filterReviewItems, openCountsBySeverity } from "@/app/admin/review/review-filters";
 import { addWalkProduct, deserializeWalk, newWalk, serializeWalk } from "@/app/admin/stocktake/walk";
@@ -67,6 +67,20 @@ describe("admin nav", () => {
     const tabs = navItemFor("/admin/stocktake")!.tabs!;
     expect(activeTabHref("/admin/stocktake", tabs)).toBe("/admin/stocktake");
     expect(activeTabHref("/admin/stocktake/variance", tabs)).toBe("/admin/stocktake/variance");
+  });
+});
+
+describe("product stock buckets", () => {
+  it("uses the alert's own low / negative verdicts", () => {
+    expect(stockBucket({ qtyInStore: 2, min_stock: 5, tier: "bulk" })).toBe("low");
+    expect(stockBucket({ qtyInStore: -1, min_stock: null, tier: "bulk" })).toBe("negative");
+    expect(stockBucket({ qtyInStore: 9, min_stock: 5, tier: "bulk" })).toBe("ok");
+  });
+
+  it("calls zero empty, except for loose stock, where zero means 'level'", () => {
+    expect(stockBucket({ qtyInStore: 0, min_stock: null, tier: "asset" })).toBe("empty");
+    expect(stockBucket({ qtyInStore: 0, min_stock: null, tier: "loose" })).toBe("ok");
+    expect(stockBucket({ qtyInStore: null, min_stock: 3, tier: "bulk" })).toBe("ok");
   });
 });
 

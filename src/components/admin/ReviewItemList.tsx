@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import Button from "@/components/ui/Button";
+import { IconChevronDown } from "@/components/ui/icons";
 import { getBrowserClient } from "@/lib/supabase/browser";
 import type { Database } from "@/lib/types/database";
 
@@ -22,21 +23,34 @@ export interface ReviewItemListProps {
   onUpdated: (item: ReviewItem) => void;
   /** product_id -> name. When given, each item links to its product. */
   productNames?: Map<string, string>;
+  /** Open every item on first render: for a short list, like one product's. */
+  expandAll?: boolean;
 }
 
 /**
- * Review items with resolve / dismiss / reopen. Who closed an item and when
- * is stamped by the database trigger from the signed-in session
- * (0025_review_queue_and_staff_stocktake.sql), never sent from here.
+ * Review items as a compact list. Each row is one line until opened; only
+ * the opened item shows its full issue, the note field and Resolve /
+ * Dismiss, so a queue of 18 items is 18 readable lines rather than 18 forms.
+ *
+ * Who closed an item and when is stamped by the database trigger from the
+ * signed-in session (0025_review_queue_and_staff_stocktake.sql), never sent
+ * from here.
  */
-export default function ReviewItemList({ items, onUpdated, productNames }: ReviewItemListProps) {
+export default function ReviewItemList({ items, onUpdated, productNames, expandAll = false }: ReviewItemListProps) {
+  const [openId, setOpenId] = useState<number | null>(null);
   return (
-    <ul className="divide-y divide-neutral-800">
+    <ul className="divide-y divide-neutral-800/70">
       {items.map((item) => (
         <ReviewItemRow
           key={item.id}
           item={item}
-          onUpdated={onUpdated}
+          open={expandAll || openId === item.id}
+          onToggle={expandAll ? undefined : () => setOpenId((current) => (current === item.id ? null : item.id))}
+          onUpdated={(updated) => {
+            onUpdated(updated);
+            // Closing an item moves on: nothing left to do on it.
+            if (updated.status !== "open") setOpenId(null);
+          }}
           productName={item.product_id ? productNames?.get(item.product_id) : undefined}
         />
       ))}
@@ -46,10 +60,14 @@ export default function ReviewItemList({ items, onUpdated, productNames }: Revie
 
 function ReviewItemRow({
   item,
+  open,
+  onToggle,
   onUpdated,
   productName,
 }: {
   item: ReviewItem;
+  open: boolean;
+  onToggle?: () => void;
   onUpdated: (item: ReviewItem) => void;
   productName?: string;
 }) {
@@ -74,55 +92,85 @@ function ReviewItemRow({
     onUpdated(data);
   }
 
-  const open = item.status === "open";
+  const isOpen = item.status === "open";
+  const header = (
+    <>
+      <StatusPill tone={SEVERITY_TONE[item.severity] ?? "inactive"}>{item.severity}</StatusPill>
+      <span className={`min-w-0 flex-1 truncate text-sm ${isOpen ? "text-neutral-100" : "text-neutral-500"}`}>
+        {item.subject}
+      </span>
+      {productName && productName !== item.subject ? (
+        <span className="hidden max-w-56 truncate text-xs text-neutral-500 md:inline">{productName}</span>
+      ) : null}
+      {!isOpen ? <StatusPill tone="active">{item.status}</StatusPill> : null}
+    </>
+  );
 
   return (
-    <li className={`flex flex-col gap-2 p-4 ${open ? "" : "opacity-70"}`}>
-      <div className="flex flex-wrap items-center gap-2">
-        <StatusPill tone={SEVERITY_TONE[item.severity] ?? "inactive"}>{item.severity}</StatusPill>
-        <span className="text-xs uppercase tracking-wide text-neutral-500">{item.entity}</span>
-        {!open ? <StatusPill tone="active">{item.status}</StatusPill> : null}
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-neutral-100">{item.subject}</span>
-        {productName && item.product_id ? (
-          <Link href={`/admin/products/${item.product_id}`} className="text-sm font-medium text-red-400 hover:text-red-300">
-            Open product
-          </Link>
-        ) : null}
-      </div>
-
-      <p className="whitespace-pre-line text-sm text-neutral-300">{item.issue}</p>
-
-      {open ? (
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="What did you check or change?"
-            className="min-h-11 flex-1 rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm"
-          />
-          <div className="flex gap-2">
-            <Button onClick={() => setStatus("resolved")} disabled={saving}>
-              Resolve
-            </Button>
-            <Button variant="ghost" onClick={() => setStatus("dismissed")} disabled={saving}>
-              Dismiss
-            </Button>
-          </div>
-        </div>
+    <li className={isOpen ? "" : "opacity-75"}>
+      {onToggle ? (
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={onToggle}
+          className="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-neutral-800/30"
+        >
+          <IconChevronDown size={15} className={`shrink-0 text-neutral-500 transition-transform ${open ? "" : "-rotate-90"}`} />
+          {header}
+        </button>
       ) : (
-        <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-400">
-          <span>
-            {item.status === "resolved" ? "Resolved" : "Dismissed"}
-            {item.resolved_at ? ` ${new Date(item.resolved_at).toLocaleDateString()}` : ""}
-            {item.resolution_note ? `: ${item.resolution_note}` : ""}
-          </span>
-          <Button variant="ghost" onClick={() => setStatus("open")} disabled={saving} className="min-h-0 px-2 py-1 text-xs">
-            Reopen
-          </Button>
-        </div>
+        <div className="flex items-center gap-3 px-4 pt-3">{header}</div>
       )}
 
-      {error ? <p className="text-sm text-red-400">{error}</p> : null}
+      {open ? (
+        <div className={`flex flex-col gap-3 px-4 pb-4 ${onToggle ? "pl-11" : "pt-2"}`}>
+          <p className="text-xs uppercase tracking-wide text-neutral-600">
+            {item.entity}
+            {productName && item.product_id ? (
+              <>
+                {" · "}
+                <Link href={`/admin/products/${item.product_id}`} className="normal-case tracking-normal text-neutral-400 hover:text-neutral-100">
+                  {productName} →
+                </Link>
+              </>
+            ) : null}
+          </p>
+          <p className="whitespace-pre-line text-sm leading-relaxed text-neutral-300">{item.issue}</p>
+
+          {isOpen ? (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="What did you check or change?"
+                aria-label="Resolution note"
+                className="min-h-9 flex-1 rounded-lg border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 placeholder:text-neutral-600"
+              />
+              <div className="flex gap-2">
+                <Button size="sm" onClick={() => setStatus("resolved")} disabled={saving}>
+                  Resolve
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setStatus("dismissed")} disabled={saving}>
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-500">
+              <span>
+                {item.status === "resolved" ? "Resolved" : "Dismissed"}
+                {item.resolved_at ? ` ${new Date(item.resolved_at).toLocaleDateString()}` : ""}
+                {item.resolution_note ? `: ${item.resolution_note}` : ""}
+              </span>
+              <Button variant="ghost" size="sm" onClick={() => setStatus("open")} disabled={saving}>
+                Reopen
+              </Button>
+            </div>
+          )}
+
+          {error ? <p className="text-sm text-red-400">{error}</p> : null}
+        </div>
+      ) : null}
     </li>
   );
 }

@@ -30,6 +30,8 @@ export interface DataTableProps<T> {
    * keep working on their own (ActionMenu stops propagation).
    */
   rowHref?: (row: T) => string | null;
+  /** Like rowHref, for rows that open something in place (a Drawer). */
+  onRowClick?: (row: T) => void;
   /** Renders a skeleton instead of the table. */
   loading?: boolean;
   /** Renders the error rung instead of the table. Message text, not an Error. */
@@ -58,6 +60,7 @@ export default function DataTable<T>({
   rows,
   rowKey,
   rowHref,
+  onRowClick,
   loading = false,
   error = null,
   emptyMessage = "Nothing here yet.",
@@ -100,26 +103,27 @@ export default function DataTable<T>({
           <tbody>
             {shown.map((row) => {
               const href = rowHref?.(row) ?? null;
+              const open = href ? () => router.push(href) : onRowClick ? () => onRowClick(row) : null;
               return (
                 <tr
                   key={rowKey(row)}
                   className={`border-b border-neutral-800/70 last:border-0 ${
-                    href ? "cursor-pointer transition-colors hover:bg-neutral-800/40 focus-visible:bg-neutral-800/40" : ""
+                    open ? "cursor-pointer transition-colors hover:bg-neutral-800/40 focus-visible:bg-neutral-800/40" : ""
                   }`}
-                  tabIndex={href ? 0 : undefined}
+                  tabIndex={open ? 0 : undefined}
                   onClick={
-                    href
+                    open
                       ? (event) => {
                           // A click on a control inside the row is that control's.
                           if ((event.target as HTMLElement).closest("a, button, input, select, textarea, label")) return;
-                          router.push(href);
+                          open();
                         }
                       : undefined
                   }
                   onKeyDown={
-                    href
+                    open
                       ? (event) => {
-                          if (event.key === "Enter" && event.target === event.currentTarget) router.push(href);
+                          if (event.key === "Enter" && event.target === event.currentTarget) open();
                         }
                       : undefined
                   }

@@ -64,6 +64,26 @@ export function revalidate(key: AdminKey): Promise<unknown> {
   return globalMutate(key);
 }
 
+/**
+ * Put a row a write just returned straight into a cached list (insert or
+ * replace by id), then revalidate in the background. The UI shows the
+ * change at once, with no full reload and no flash of the old list.
+ */
+export function upsertCached<T extends { id: string | number }>(key: AdminKey, row: T): Promise<unknown> {
+  return globalMutate<T[]>(
+    key,
+    (current) => {
+      const list = current ?? [];
+      const at = list.findIndex((item) => item.id === row.id);
+      if (at === -1) return [...list, row];
+      const next = list.slice();
+      next[at] = { ...next[at], ...row };
+      return next;
+    },
+    { revalidate: true },
+  );
+}
+
 /** Drop every cached read -- on sign-out, so the next account starts clean. */
 export function clearAdminCache(): Promise<unknown> {
   return globalMutate(() => true, undefined, { revalidate: false });

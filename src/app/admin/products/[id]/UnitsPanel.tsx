@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import useSWR from "swr";
 
 import DataTable, { type Column } from "@/components/admin/DataTable";
+import Drawer from "@/components/admin/Drawer";
+import { CAPTION, FIELD, LABEL } from "@/components/admin/form";
 import StatusPill, { type StatusTone } from "@/components/admin/StatusPill";
 import Button from "@/components/ui/Button";
+import { IconPlus } from "@/components/ui/icons";
 import { getBrowserClient } from "@/lib/supabase/browser";
 import { fetchAllRows } from "@/lib/supabase/fetch-all";
 import type { Database } from "@/lib/types/database";
@@ -30,8 +34,6 @@ const CONDITION_TONE: Record<string, StatusTone> = {
   disposed: "inactive",
 };
 
-const INPUT = "min-h-11 rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm";
-
 /**
  * The per-unit register for one product: component IDs, serials, condition,
  * and which individual units are on loan to the club. Identity only -- where
@@ -39,39 +41,17 @@ const INPUT = "min-h-11 rounded-lg border border-neutral-700 bg-neutral-950 px-3
  * holder field here.
  */
 export default function UnitsPanel({ productId }: { productId: string }) {
-  const [units, setUnits] = useState<AssetUnit[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const unitsQ = useSWR(["admin/asset-units", productId], () =>
+    fetchAllRows<AssetUnit>((from, to) =>
+      getBrowserClient().from("asset_units").select("*").eq("product_id", productId).order("unit_code").order("id").range(from, to),
+    ),
+  );
+  const units = unitsQ.data ?? [];
   /** null = no editor open; "new" = adding; otherwise the unit id being edited. */
   const [editing, setEditing] = useState<string | null>(null);
   const [form, setForm] = useState<UnitFormState>(EMPTY_UNIT_FORM);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-
-  async function load() {
-    const supabase = getBrowserClient();
-    try {
-      const rows = await fetchAllRows((from, to) =>
-        supabase.from("asset_units").select("*").eq("product_id", productId).order("unit_code").range(from, to),
-      );
-      setUnits(rows);
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : "Failed to load units.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!cancelled) await load();
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productId]);
 
   function openEditor(unit: AssetUnit | null) {
     setSaveError(null);
@@ -99,7 +79,7 @@ export default function UnitsPanel({ productId }: { productId: string }) {
       return;
     }
     setEditing(null);
-    await load();
+    await unitsQ.mutate();
   }
 
   const counts = CONDITIONS.map((c) => [c, units.filter((u) => u.condition === c).length] as const).filter(([, n]) => n > 0);
@@ -127,52 +107,68 @@ export default function UnitsPanel({ productId }: { productId: string }) {
       render: (u) => (u.ownership === "on_loan" ? <StatusPill tone="warning">on loan · {u.loaned_from}</StatusPill> : "club"),
     },
     { key: "seen", header: "Last seen", render: (u) => u.last_seen_location ?? "—" },
-    { key: "checked", header: "Checked", render: (u) => u.last_checked_on ?? "—" },
-    {
-      key: "notes",
-      header: "Notes",
-      render: (u) => <span className="block max-w-64 truncate text-neutral-400" title={u.notes ?? ""}>{u.notes ?? "—"}</span>,
-    },
-    {
-      key: "edit",
-      header: "",
-      className: "text-right",
-      render: (u) => (
-        <Button variant="ghost" onClick={() => openEditor(u)} className="min-h-0 px-2 py-1 text-xs">
-          Edit
-        </Button>
-      ),
-    },
   ];
+
+  const field = <K extends keyof UnitFormState>(key: K) => ({
+    value: form[key] as string,
+    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+      setForm((f) => ({ ...f, [key]: e.target.value })),
+  });
 
   return (
     <div className="flex flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-        <p className="text-xs text-neutral-400">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 pb-3">
+        <p className="text-sm text-neutral-500">
           {units.length === 0
-            ? "No individual units recorded. Add them if each one carries its own sticker or serial."
+            ? "None recorded. Add units if each carries its own sticker or serial."
             : counts.map(([c, n]) => `${n} ${c}`).join(" · ")}
         </p>
-        {editing === null ? (
-          <Button variant="secondary" onClick={() => openEditor(null)} className="min-h-0 px-3 py-1.5 text-xs">
-            + Add unit
-          </Button>
-        ) : null}
+        <Button variant="secondary" size="sm" onClick={() => openEditor(null)}>
+          <IconPlus size={15} />
+          Add unit
+        </Button>
       </div>
 
-      {editing !== null ? (
-        <form onSubmit={handleSave} className="grid grid-cols-1 gap-3 border-y border-neutral-800 bg-neutral-950/50 p-4 sm:grid-cols-3">
-          <label className="flex flex-col gap-1 text-xs text-neutral-300">
-            Component ID *
-            <input value={form.unit_code} onChange={(e) => setForm((f) => ({ ...f, unit_code: e.target.value }))} className={INPUT} />
+      {units.length > 0 || unitsQ.isLoading || unitsQ.error ? (
+        <DataTable
+          columns={columns}
+          rows={units}
+          rowKey={(u) => u.id}
+          onRowClick={(u) => openEditor(u)}
+          loading={unitsQ.isLoading}
+          error={(unitsQ.error as Error | undefined)?.message ?? null}
+        />
+      ) : null}
+
+      <Drawer
+        open={editing !== null}
+        onClose={() => setEditing(null)}
+        title={editing === "new" ? "Add unit" : `Unit ${form.unit_code}`}
+        description="Identity only. Where the unit is comes from the ledger."
+        footer={
+          <>
+            <Button type="submit" form="unit-form" size="sm" disabled={saving}>
+              {saving ? "Saving…" : editing === "new" ? "Add unit" : "Save unit"}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setEditing(null)} disabled={saving}>
+              Cancel
+            </Button>
+            {saveError ? <span className="text-sm text-red-400">{saveError}</span> : null}
+          </>
+        }
+      >
+        <form id="unit-form" onSubmit={handleSave} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className={LABEL}>
+            <span className={CAPTION}>Component ID *</span>
+            <input {...field("unit_code")} className={FIELD} />
           </label>
-          <label className="flex flex-col gap-1 text-xs text-neutral-300">
-            Serial number
-            <input value={form.serial_number} onChange={(e) => setForm((f) => ({ ...f, serial_number: e.target.value }))} className={INPUT} />
+          <label className={LABEL}>
+            <span className={CAPTION}>Serial number</span>
+            <input {...field("serial_number")} className={FIELD} />
           </label>
-          <label className="flex flex-col gap-1 text-xs text-neutral-300">
-            Condition
-            <select value={form.condition} onChange={(e) => setForm((f) => ({ ...f, condition: e.target.value as Condition }))} className={INPUT}>
+          <label className={LABEL}>
+            <span className={CAPTION}>Condition</span>
+            <select value={form.condition} onChange={(e) => setForm((f) => ({ ...f, condition: e.target.value as Condition }))} className={FIELD}>
               {CONDITIONS.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -180,9 +176,9 @@ export default function UnitsPanel({ productId }: { productId: string }) {
               ))}
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-xs text-neutral-300">
-            Owner
-            <select value={form.ownership} onChange={(e) => setForm((f) => ({ ...f, ownership: e.target.value as UnitOwnership }))} className={INPUT}>
+          <label className={LABEL}>
+            <span className={CAPTION}>Owner</span>
+            <select value={form.ownership} onChange={(e) => setForm((f) => ({ ...f, ownership: e.target.value as UnitOwnership }))} className={FIELD}>
               {UNIT_OWNERSHIPS.map((o) => (
                 <option key={o} value={o}>
                   {o === "owned" ? "Club" : "On loan to the club"}
@@ -192,55 +188,42 @@ export default function UnitsPanel({ productId }: { productId: string }) {
           </label>
           {form.ownership === "on_loan" ? (
             <>
-              <label className="flex flex-col gap-1 text-xs text-neutral-300">
-                On loan from *
-                <input value={form.loaned_from} onChange={(e) => setForm((f) => ({ ...f, loaned_from: e.target.value }))} className={INPUT} />
+              <label className={LABEL}>
+                <span className={CAPTION}>On loan from *</span>
+                <input {...field("loaned_from")} className={FIELD} />
               </label>
-              <label className="flex flex-col gap-1 text-xs text-neutral-300">
-                Due back
-                <input type="date" value={form.loan_due} onChange={(e) => setForm((f) => ({ ...f, loan_due: e.target.value }))} className={INPUT} />
+              <label className={LABEL}>
+                <span className={CAPTION}>Due back</span>
+                <input type="date" {...field("loan_due")} className={FIELD} />
               </label>
             </>
           ) : null}
-          <label className="flex flex-col gap-1 text-xs text-neutral-300">
-            Labelled
-            <select value={form.labelled} onChange={(e) => setForm((f) => ({ ...f, labelled: e.target.value as UnitFormState["labelled"] }))} className={INPUT}>
+          <label className={LABEL}>
+            <span className={CAPTION}>Labelled</span>
+            <select value={form.labelled} onChange={(e) => setForm((f) => ({ ...f, labelled: e.target.value as UnitFormState["labelled"] }))} className={FIELD}>
               <option value="">Unknown</option>
               <option value="true">Yes</option>
               <option value="false">No</option>
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-xs text-neutral-300">
-            Last seen
-            <input value={form.last_seen_location} onChange={(e) => setForm((f) => ({ ...f, last_seen_location: e.target.value }))} className={INPUT} />
+          <label className={LABEL}>
+            <span className={CAPTION}>Last seen</span>
+            <input {...field("last_seen_location")} className={FIELD} />
           </label>
-          <label className="flex flex-col gap-1 text-xs text-neutral-300">
-            Last checked
-            <input type="date" value={form.last_checked_on} onChange={(e) => setForm((f) => ({ ...f, last_checked_on: e.target.value }))} className={INPUT} />
+          <label className={LABEL}>
+            <span className={CAPTION}>Last checked</span>
+            <input type="date" {...field("last_checked_on")} className={FIELD} />
           </label>
-          <label className="flex flex-col gap-1 text-xs text-neutral-300 sm:col-span-3">
-            Notes
-            <input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} className={INPUT} />
+          <label className={`${LABEL} sm:col-span-2`}>
+            <span className={CAPTION}>Notes</span>
+            <input {...field("notes")} className={FIELD} />
           </label>
-          <label className="flex items-center gap-2 text-xs text-neutral-300">
+          <label className="flex items-center gap-2 text-sm text-neutral-300">
             <input type="checkbox" checked={form.active} onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))} />
             Active
           </label>
-          <div className="flex items-center gap-2 sm:col-span-2 sm:justify-end">
-            {saveError ? <span className="text-xs text-red-400">{saveError}</span> : null}
-            <Button type="submit" disabled={saving}>
-              {saving ? "Saving…" : editing === "new" ? "Add unit" : "Save unit"}
-            </Button>
-            <Button type="button" variant="ghost" onClick={() => setEditing(null)} disabled={saving}>
-              Cancel
-            </Button>
-          </div>
         </form>
-      ) : null}
-
-      {units.length > 0 || loading || loadError ? (
-        <DataTable columns={columns} rows={units} rowKey={(u) => u.id} loading={loading} error={loadError} />
-      ) : null}
+      </Drawer>
     </div>
   );
 }
