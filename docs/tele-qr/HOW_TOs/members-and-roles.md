@@ -103,16 +103,32 @@ plain `=`, so a mismatch of one character gives you a dashboard that signs in
 and then shows nothing but empty tables — which looks exactly like a broken
 app, not a typo.
 
-**The normal way — let them set their own password:**
+**The normal way — from the dashboard:**
+
+1. `/admin/members` → create them (or open an existing member) with their
+   email, and set the role to `admin` or `procurement`.
+2. On their page, **Dashboard access** → **Send sign-in invite**.
+3. They tap the link in the email, land on `/admin/login`, set their own
+   password, and are signed in.
+
+Nobody ever invents or relays a password. Safe to click again — a re-send
+replaces the previous link (an existing login gets a password-reset email,
+which reaches the same form).
+
+Creating the row alone does *not* give them a login: the browser can't create
+a Supabase Auth user, because that needs the service-role key. The button
+calls a server action (`src/app/admin/members/actions.ts`) which is the one
+place in `/admin` where RLS is not the authorisation boundary — it verifies
+the caller is an active admin itself, since the service role bypasses RLS.
+
+**From the terminal**, same thing, for when no admin exists yet to click that
+button (or to point the link at localhost):
 
 ```bash
 npx tsx scripts/invite-admin-user.ts <email> <admin|procurement> ["Full Name"]
 ```
 
-Writes the `members` row *and* emails them a link. They tap it, land on
-`/admin/login`, set a password, and are signed in. Nobody ever invents or
-relays a password. Idempotent: re-run it to re-send (an existing auth user
-gets a password-reset email, which reaches the same form).
+Both paths call the same `inviteStaff()` in `src/lib/server/staff-invite.ts`.
 
 Notes on the email:
 

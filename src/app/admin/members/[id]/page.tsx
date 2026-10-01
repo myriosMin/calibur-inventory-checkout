@@ -18,6 +18,7 @@ import { getBrowserClient } from "@/lib/supabase/browser";
 import type { Database } from "@/lib/types/database";
 import { normalizeTelegramHandle } from "@/lib/utils/normalize";
 
+import { sendStaffInvite } from "../actions";
 import {
   buildOffboardPatch,
   buildUnbindPatch,
@@ -109,6 +110,10 @@ export default function AdminMemberEditPage({
   // suppressed by the browser.)
   const [pendingAction, setPendingAction] = useState<LifecycleAction | null>(null);
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
+
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteMessage, setInviteMessage] = useState<string | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
 
   async function store(updated: Member) {
     await upsertCached(KEYS.members, updated);
@@ -218,6 +223,36 @@ export default function AdminMemberEditPage({
     } finally {
       setLifecycleBusy(false);
     }
+  }
+
+  /**
+   * Staff need a Supabase Auth login, which the browser cannot create: it
+   * takes the service-role key. The server action does both halves and the
+   * person sets their own password, so no password is ever chosen here or
+   * relayed over chat.
+   */
+  async function handleSendInvite() {
+    if (!member?.nus_email) return;
+    setInviteError(null);
+    setInviteMessage(null);
+    setInviteBusy(true);
+
+    const result = await sendStaffInvite({
+      email: member.nus_email,
+      role: member.role,
+      fullName: member.full_name,
+    });
+
+    if (!result.ok) {
+      setInviteError(result.error);
+    } else {
+      setInviteMessage(
+        result.outcome === "invited"
+          ? `Invite sent to ${result.email}. The link works once and expires in an hour.`
+          : `${result.email} already had a login, so a password-reset email went out instead. Same form, works once, expires in an hour.`,
+      );
+    }
+    setInviteBusy(false);
   }
 
   if (!member) {
@@ -362,6 +397,34 @@ export default function AdminMemberEditPage({
               ) : null}
             </div>
           </Card>
+
+          {/*
+            Staff only. A `member` row needs no login here -- members use the
+            Mini App, which authenticates through Telegram, not Supabase Auth.
+          */}
+          {member.role !== "member" ? (
+            <section className="rounded-xl border border-neutral-800 p-4">
+              <h2 className="text-base font-semibold text-neutral-100">Dashboard access</h2>
+              <p className="mt-1 text-sm text-neutral-400">
+                Emails them a link to set their own password and sign in here as {member.role}. Nobody has to
+                pick a password for them. Safe to send again — it replaces the previous link.
+              </p>
+              {member.nus_email ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Button variant="secondary" size="sm" disabled={inviteBusy} onClick={handleSendInvite}>
+                    {inviteBusy ? "Sending…" : "Send sign-in invite"}
+                  </Button>
+                  <span className="text-xs text-neutral-500">to {member.nus_email}</span>
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-amber-400">
+                  Add an email address first — it becomes their login, and it has to match this row exactly.
+                </p>
+              )}
+              {inviteMessage ? <p className="mt-2 text-sm text-green-400">{inviteMessage}</p> : null}
+              {inviteError ? <p className="mt-2 text-sm text-red-400">{inviteError}</p> : null}
+            </section>
+          ) : null}
 
           {/*
             Offboarding sits apart from Edit on purpose: it is a one-click

@@ -320,7 +320,15 @@ export default function AdminMembersPage() {
               <input type="date" value={form.joined_at} onChange={set("joined_at")} className={FIELD} />
             </label>
           </div>
-          <p className={HELP}>A staff role only grants sign-in here when the NUS email matches their account.</p>
+          {form.role === "member" ? (
+            <p className={HELP}>A staff role only grants sign-in here when the NUS email matches their account.</p>
+          ) : (
+            <p className={HELP}>
+              Creating the row doesn&apos;t give them a login. Open their page afterwards and use{" "}
+              <strong className="text-neutral-300">Send sign-in invite</strong> — they set their own password from
+              the email. An email address is required for that.
+            </p>
+          )}
         </form>
       </Drawer>
 
