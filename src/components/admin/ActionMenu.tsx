@@ -86,7 +86,7 @@ export default function ActionMenu({
           role="menu"
           style={style}
           onClick={(event) => event.stopPropagation()}
-          className="animate-fade-in overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 p-1 shadow-2xl shadow-black/60"
+          className="animate-fade-in overflow-hidden whitespace-normal rounded-xl border border-neutral-800 bg-neutral-900 p-1 text-left shadow-2xl shadow-black/60"
         >
           {items.map((item) => {
             const body = (

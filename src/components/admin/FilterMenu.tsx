@@ -43,7 +43,7 @@ export default function FilterMenu({
         <div
           ref={panelRef}
           style={style}
-          className="animate-fade-in flex flex-col gap-3 rounded-xl border border-neutral-800 bg-neutral-900 p-4 shadow-2xl shadow-black/60"
+          className="animate-fade-in flex flex-col gap-3 whitespace-normal rounded-xl border border-neutral-800 bg-neutral-900 p-4 shadow-2xl shadow-black/60"
         >
           {children}
           {onReset && activeCount > 0 ? (

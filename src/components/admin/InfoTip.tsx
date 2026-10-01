@@ -43,7 +43,7 @@ export default function InfoTip({
           ref={panelRef}
           role="note"
           style={style}
-          className="animate-fade-in rounded-xl border border-neutral-800 bg-neutral-900 p-3 text-sm leading-relaxed font-normal normal-case tracking-normal text-neutral-300 shadow-2xl shadow-black/60 [&_p+p]:mt-2"
+          className="animate-fade-in whitespace-normal rounded-xl border border-neutral-800 bg-neutral-900 p-3 text-left text-sm leading-relaxed font-normal normal-case tracking-normal text-neutral-300 shadow-2xl shadow-black/60 [&_p+p]:mt-2"
         >
           {children}
         </div>
