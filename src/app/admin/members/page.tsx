@@ -1,18 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
+import Card from "@/components/admin/Card";
+import DataTable, { type Column } from "@/components/admin/DataTable";
+import Drawer from "@/components/admin/Drawer";
+import { CAPTION, FIELD, FILTER, HELP, LABEL } from "@/components/admin/form";
+import PageHeader from "@/components/admin/PageHeader";
+import Segmented from "@/components/admin/Segmented";
+import StatusPill from "@/components/admin/StatusPill";
 import Button from "@/components/ui/Button";
+import { IconPlus, IconSearch } from "@/components/ui/icons";
 import Toast from "@/components/ui/Toast";
+import { KEYS, revalidate, upsertCached, useMembers, type MemberRow } from "@/lib/admin/queries";
 import { MEMBER_ROLES, type MemberRole } from "@/lib/csv/member-roster";
 import { getBrowserClient } from "@/lib/supabase/browser";
-import type { Database } from "@/lib/types/database";
 import { normalizeTelegramHandle } from "@/lib/utils/normalize";
 
 import MemberImport from "./MemberImport";
 
-type Member = Database["public"]["Tables"]["members"]["Row"];
 type Role = MemberRole;
 
 const ROLES: readonly Role[] = MEMBER_ROLES;
@@ -28,59 +35,64 @@ const EMPTY_FORM = {
 
 type FormState = typeof EMPTY_FORM;
 
+type StatusFilter = "active" | "unlinked" | "staff" | "inactive" | "all";
+
+function matchesStatus(member: MemberRow, filter: StatusFilter): boolean {
+  switch (filter) {
+    case "active":
+      return member.active;
+    case "unlinked":
+      return member.active && member.telegram_user_id === null;
+    case "staff":
+      return member.role !== "member";
+    case "inactive":
+      return !member.active;
+    default:
+      return true;
+  }
+}
+
 /**
- * Admin member list + create form. Mirrors the shape of
- * src/app/admin/products/page.tsx / holders/page.tsx. `telegram_user_id` and
- * `telegram_bound_at` are intentionally not create-form inputs -- they're
- * bot-managed and only ever set via the /admin/bind-queue flow. Inserting a
- * row here also fires the `create_member_holder` trigger
- * (0003_holders.sql), which auto-creates the linked `member`-kind holders
- * row -- this page must not try to create that holder itself.
+ * The roster. `telegram_user_id` and `telegram_bound_at` are intentionally
+ * not create-form inputs -- they're bot-managed and only ever set via the
+ * join-code or bind-queue flows. Inserting a row fires the
+ * `create_member_holder` trigger (0003_holders.sql), which auto-creates the
+ * linked `member`-kind holder -- this page must not create that itself.
  */
 export default function AdminMembersPage() {
-  const supabase = useMemo(() => getBrowserClient(), []);
+  const membersQ = useMembers();
+  const members = useMemo(() => membersQ.data ?? [], [membersQ.data]);
 
-  const [members, setMembers] = useState<Member[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
+  const [status, setStatus] = useState<StatusFilter>("active");
+  const [query, setQuery] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [toast, setToast] = useState<{
-    variant: "success" | "error";
-    message: string;
-  } | null>(null);
+  const [toast, setToast] = useState<{ variant: "success" | "error"; message: string } | null>(null);
 
-  async function loadMembers() {
-    setLoading(true);
-    setLoadError(null);
-    const { data, error } = await supabase
-      .from("members")
-      .select("*")
-      .order("full_name", { ascending: true });
-
-    if (error) {
-      setLoadError(error.message);
-    } else {
-      setMembers(data ?? []);
+  const counts = useMemo(() => {
+    const result: Record<StatusFilter, number> = { active: 0, unlinked: 0, staff: 0, inactive: 0, all: members.length };
+    for (const member of members) {
+      for (const key of ["active", "unlinked", "staff", "inactive"] as const) {
+        if (matchesStatus(member, key)) result[key] += 1;
+      }
     }
-    setLoading(false);
-  }
+    return result;
+  }, [members]);
 
-  useEffect(() => {
-    // Mount-only fetch; `cancelled` guards against setting state after
-    // unmount if the request is still in flight (matches the pattern in
-    // src/app/admin/holders/page.tsx).
-    let cancelled = false;
-    (async () => {
-      if (!cancelled) await loadMembers();
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const visible = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return members.filter(
+      (member) =>
+        matchesStatus(member, status) &&
+        (!needle ||
+          [member.full_name, member.display_name, member.nus_email, member.telegram_username].some((field) =>
+            field?.toLowerCase().includes(needle),
+          )),
+    );
+  }, [members, status, query]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -98,17 +110,15 @@ export default function AdminMembersPage() {
     }
 
     setSubmitting(true);
-    const { data, error } = await supabase
+    const { data, error } = await getBrowserClient()
       .from("members")
       .insert({
         full_name: fullName,
         display_name: form.display_name.trim() || null,
         nus_email: form.nus_email.trim() || null,
         // Normalised the same way the bulk importer and the bind-queue
-        // lookup do, so a handle typed here as "@Alex" matches the
-        // "alex" the bot reports on /start.
-        telegram_username:
-          normalizeTelegramHandle(form.telegram_username) || null,
+        // lookup do, so "@Alex" here matches the "alex" the bot reports.
+        telegram_username: normalizeTelegramHandle(form.telegram_username) || null,
         role: form.role,
         joined_at: form.joined_at || null,
       })
@@ -117,227 +127,211 @@ export default function AdminMembersPage() {
     setSubmitting(false);
 
     if (error) {
-      setToast({ variant: "error", message: error.message });
+      setFormError(error.message);
       return;
     }
 
-    setToast({
-      variant: "success",
-      message: `Member "${data.display_name ?? data.full_name}" created.`,
-    });
+    setToast({ variant: "success", message: `Added ${data.display_name ?? data.full_name}.` });
     setForm(EMPTY_FORM);
-    await loadMembers();
+    setFormOpen(false);
+    await upsertCached(KEYS.members, data);
+    // The trigger created a holder too.
+    void revalidate(KEYS.holders);
   }
 
+  const columns: Column<MemberRow>[] = [
+    {
+      key: "name",
+      header: "Name",
+      render: (m) => (
+        <span className="block">
+          <span className="font-medium text-neutral-100">{m.display_name ?? m.full_name}</span>
+          {m.display_name && m.display_name !== m.full_name ? (
+            <span className="block text-xs text-neutral-500">{m.full_name}</span>
+          ) : null}
+        </span>
+      ),
+    },
+    { key: "email", header: "NUS email", render: (m) => <span className="text-neutral-400">{m.nus_email ?? "—"}</span> },
+    {
+      key: "telegram",
+      header: "Telegram",
+      render: (m) => (
+        <span className="flex items-center gap-2">
+          <span
+            aria-hidden
+            className={`size-1.5 rounded-full ${m.telegram_user_id !== null ? "bg-status-good" : "bg-neutral-600"}`}
+          />
+          <span className={m.telegram_user_id !== null ? "text-neutral-300" : "text-neutral-500"}>
+            {m.telegram_username ? `@${m.telegram_username}` : m.telegram_user_id !== null ? "linked" : "not linked"}
+          </span>
+        </span>
+      ),
+    },
+    {
+      key: "role",
+      header: "",
+      className: "text-right",
+      render: (m) => (
+        <span className="flex justify-end gap-1">
+          {m.role !== "member" ? <StatusPill tone="warning">{m.role}</StatusPill> : null}
+          {!m.active ? <StatusPill tone="inactive">inactive</StatusPill> : null}
+        </span>
+      ),
+    },
+  ];
+
+  const set = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setForm((p) => ({ ...p, [key]: e.target.value }));
+
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-lg font-semibold text-neutral-100">Members</h1>
-        <p className="mt-1 text-sm text-neutral-300">
-          Club members who can use the Mini App and, if promoted to{" "}
-          <code className="rounded bg-neutral-800 px-1 py-0.5 text-xs">admin</code>
-          , sign in here. Creating a member automatically creates a linked{" "}
-          <code className="rounded bg-neutral-800 px-1 py-0.5 text-xs">member</code>{" "}
-          holder for them -- no need to add one on the Holders page.{" "}
-          <span className="font-medium">
-            NUS email
-          </span>{" "}
-          matters most for admins: it must exactly match the email of their
-          Supabase Auth account for{" "}
-          <code className="rounded bg-neutral-800 px-1 py-0.5 text-xs">is_admin()</code>{" "}
-          to grant them access to this dashboard. Telegram binding
-          (<code className="rounded bg-neutral-800 px-1 py-0.5 text-xs">
-            telegram_user_id
-          </code>
-          ) isn&apos;t set here -- it happens via the{" "}
-          <Link href="/admin/bind-queue" className="text-red-400 hover:text-red-300">
-            bind queue
-          </Link>{" "}
-          when the member first messages the bot.
-        </p>
-      </div>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title="Members"
+        description={
+          membersQ.isLoading
+            ? "The club roster."
+            : `${counts.active} active · ${counts.unlinked} not on Telegram yet`
+        }
+        info={
+          <>
+            <p>
+              Members can use the Mini App; admins and procurement can also sign in here. Adding a member creates
+              their holder automatically.
+            </p>
+            <p>
+              For staff, the NUS email must exactly match their sign-in account. Telegram is never typed in here: it
+              links when they join with a{" "}
+              <Link href="/admin/join-codes" className="text-red-400 hover:text-red-300">
+                join code
+              </Link>{" "}
+              or through the{" "}
+              <Link href="/admin/bind-queue" className="text-red-400 hover:text-red-300">
+                bind queue
+              </Link>
+              .
+            </p>
+          </>
+        }
+        actions={
+          <>
+            <Button variant="secondary" size="sm" onClick={() => setImportOpen(true)}>
+              Import CSV
+            </Button>
+            <Button size="sm" onClick={() => setFormOpen(true)}>
+              <IconPlus size={16} />
+              Add member
+            </Button>
+          </>
+        }
+      />
 
-      {toast ? (
-        <Toast
-          variant={toast.variant}
-          message={toast.message}
-          onDismiss={() => setToast(null)}
+      {toast ? <Toast variant={toast.variant} message={toast.message} onDismiss={() => setToast(null)} /> : null}
+
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <Segmented
+          ariaLabel="Member status"
+          value={status}
+          onChange={setStatus}
+          options={[
+            { value: "active", label: "Active", count: counts.active },
+            { value: "unlinked", label: "Not on Telegram", count: counts.unlinked, tone: "warning" },
+            { value: "staff", label: "Staff", count: counts.staff },
+            { value: "inactive", label: "Inactive", count: counts.inactive },
+            { value: "all", label: "All", count: counts.all },
+          ]}
         />
-      ) : null}
-
-      <MemberImport onImported={loadMembers} />
-
-      <form
-        onSubmit={handleSubmit}
-        className="flex flex-col gap-3 rounded-xl border border-neutral-800 bg-neutral-900 p-4"
-      >
-        <h2 className="text-sm font-semibold text-neutral-100">New member</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-sm text-neutral-200">
-            Full name *
-            <input
-              type="text"
-              required
-              value={form.full_name}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, full_name: e.target.value }))
-              }
-              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-neutral-200">
-            Display name
-            <input
-              type="text"
-              value={form.display_name}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, display_name: e.target.value }))
-              }
-              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-neutral-200">
-            NUS email
-            <input
-              type="email"
-              value={form.nus_email}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, nus_email: e.target.value }))
-              }
-              placeholder="e123456@u.nus.edu"
-              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-neutral-200">
-            Telegram username
-            <input
-              type="text"
-              value={form.telegram_username}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, telegram_username: e.target.value }))
-              }
-              placeholder="without @"
-              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-neutral-200">
-            Role
-            <select
-              value={form.role}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, role: e.target.value as Role }))
-              }
-              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
-            >
-              {ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-            <span className="text-xs text-neutral-400">
-              Only matters for /admin sign-in when combined with a matching
-              NUS email above -- see the note at the top of this page.
-            </span>
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-neutral-200">
-            Joined
-            <input
-              type="date"
-              value={form.joined_at}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, joined_at: e.target.value }))
-              }
-              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
-            />
-          </label>
-        </div>
-        {formError ? <p className="text-sm text-red-400">{formError}</p> : null}
-        <div>
-          <Button type="submit" disabled={submitting}>
-            {submitting ? "Creating…" : "Create member"}
-          </Button>
-        </div>
-      </form>
-
-      <div className="rounded-xl border border-neutral-800 bg-neutral-900">
-        <h2 className="border-b border-neutral-800 px-4 py-3 text-sm font-semibold text-neutral-100">
-          All members ({members.length})
-        </h2>
-        {loading ? (
-          <p className="p-4 text-sm text-neutral-400">Loading…</p>
-        ) : loadError ? (
-          <p className="p-4 text-sm text-red-400">{loadError}</p>
-        ) : members.length === 0 ? (
-          <p className="p-4 text-sm text-neutral-400">No members yet.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-neutral-800 text-neutral-400">
-                  <th className="px-4 py-2 font-medium">Full name</th>
-                  <th className="px-4 py-2 font-medium">Display name</th>
-                  <th className="px-4 py-2 font-medium">NUS email</th>
-                  <th className="px-4 py-2 font-medium">Telegram</th>
-                  <th className="px-4 py-2 font-medium">Bound</th>
-                  <th className="px-4 py-2 font-medium">Role</th>
-                  <th className="px-4 py-2 font-medium">Active</th>
-                  <th className="px-4 py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {members.map((member) => (
-                  <tr key={member.id} className="border-b border-neutral-800 last:border-0">
-                    <td className="px-4 py-2 text-neutral-100">{member.full_name}</td>
-                    <td className="px-4 py-2 text-neutral-300">
-                      {member.display_name ?? "—"}
-                    </td>
-                    <td className="px-4 py-2 text-neutral-300">
-                      {member.nus_email ?? "—"}
-                    </td>
-                    <td className="px-4 py-2 text-neutral-300">
-                      {member.telegram_username
-                        ? `@${member.telegram_username}`
-                        : "—"}
-                    </td>
-                    <td className="px-4 py-2">
-                      {member.telegram_user_id != null ? (
-                        <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-400">
-                          Bound
-                        </span>
-                      ) : (
-                        <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-xs font-medium text-neutral-300">
-                          Unbound
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-neutral-300">{member.role}</td>
-                    <td className="px-4 py-2">
-                      {member.active ? (
-                        <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-400">
-                          Active
-                        </span>
-                      ) : (
-                        <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-xs font-medium text-neutral-300">
-                          Inactive
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      <Link
-                        href={`/admin/members/${member.id}`}
-                        className="text-sm font-medium text-red-400 hover:text-red-300"
-                      >
-                        Edit
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <label className="relative block">
+          <span className="sr-only">Search members</span>
+          <IconSearch size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Name, email or handle…"
+            className={`${FILTER} w-64 pl-9`}
+          />
+        </label>
       </div>
+
+      <Card padded={false}>
+        <DataTable
+          columns={columns}
+          rows={visible}
+          rowKey={(m) => m.id}
+          rowHref={(m) => `/admin/members/${m.id}`}
+          loading={membersQ.isLoading}
+          error={(membersQ.error as Error | undefined)?.message ?? null}
+          emptyMessage={members.length === 0 ? "No members yet. Add one, or import the roster." : "Nobody matches."}
+        />
+      </Card>
+
+      <Drawer
+        open={formOpen}
+        onClose={() => {
+          setFormOpen(false);
+          setFormError(null);
+        }}
+        title="Add member"
+        description="Their holder is created automatically."
+        footer={
+          <>
+            <Button type="submit" form="new-member" size="sm" disabled={submitting}>
+              {submitting ? "Adding…" : "Add member"}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setFormOpen(false)}>
+              Cancel
+            </Button>
+            {formError ? <p className="text-sm text-red-400">{formError}</p> : null}
+          </>
+        }
+      >
+        <form id="new-member" onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <label className={LABEL}>
+            <span className={CAPTION}>Full name *</span>
+            <input type="text" required value={form.full_name} onChange={set("full_name")} className={FIELD} />
+          </label>
+          <label className={LABEL}>
+            <span className={CAPTION}>Display name</span>
+            <input type="text" value={form.display_name} onChange={set("display_name")} className={FIELD} />
+          </label>
+          <label className={LABEL}>
+            <span className={CAPTION}>NUS email</span>
+            <input type="email" value={form.nus_email} onChange={set("nus_email")} placeholder="e123456@u.nus.edu" className={FIELD} />
+          </label>
+          <label className={LABEL}>
+            <span className={CAPTION}>Telegram username</span>
+            <input type="text" value={form.telegram_username} onChange={set("telegram_username")} placeholder="without @" className={FIELD} />
+            <span className={HELP}>Lets the bind queue match them when they first message the bot.</span>
+          </label>
+          <div className="grid grid-cols-2 gap-4">
+            <label className={LABEL}>
+              <span className={CAPTION}>Role</span>
+              <select value={form.role} onChange={set("role")} className={FIELD}>
+                {ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={LABEL}>
+              <span className={CAPTION}>Joined</span>
+              <input type="date" value={form.joined_at} onChange={set("joined_at")} className={FIELD} />
+            </label>
+          </div>
+          <p className={HELP}>A staff role only grants sign-in here when the NUS email matches their account.</p>
+        </form>
+      </Drawer>
+
+      <MemberImport
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={() => {
+          void revalidate(KEYS.members);
+          void revalidate(KEYS.holders);
+        }}
+      />
     </div>
   );
 }

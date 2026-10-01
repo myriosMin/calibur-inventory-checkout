@@ -1,10 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useMemo, useState } from "react";
+import useSWR from "swr";
 
+import Card from "@/components/admin/Card";
+import Drawer from "@/components/admin/Drawer";
+import { CAPTION, FIELD, HELP, LABEL } from "@/components/admin/form";
+import PageHeader from "@/components/admin/PageHeader";
+import Skeleton from "@/components/admin/Skeleton";
+import StatusPill from "@/components/admin/StatusPill";
 import Button from "@/components/ui/Button";
 import Toast from "@/components/ui/Toast";
+import { KEYS, upsertCached, useHolders, useHoldings, useMembers, useProducts } from "@/lib/admin/queries";
+import { MEMBER_ROLES, type MemberRole } from "@/lib/csv/member-roster";
 import { getBrowserClient } from "@/lib/supabase/browser";
 import type { Database } from "@/lib/types/database";
 import { normalizeTelegramHandle } from "@/lib/utils/normalize";
@@ -16,9 +25,11 @@ import {
 } from "../memberLifecycle";
 
 type Member = Database["public"]["Tables"]["members"]["Row"];
-type Role = "member" | "admin";
+type Role = MemberRole;
 
-const ROLES: Role[] = ["member", "admin"];
+// All three roles. This list used to be ["member", "admin"], which made a
+// procurement member impossible to save from this page.
+const ROLES: readonly Role[] = MEMBER_ROLES;
 
 type LifecycleAction = "unbind" | "offboard";
 
@@ -59,12 +70,32 @@ export default function AdminMemberEditPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const supabase = useMemo(() => getBrowserClient(), []);
+  const supabase = getBrowserClient();
+  const membersQ = useMembers();
+  const cached = membersQ.data?.find((m) => m.id === id);
+  const directQ = useSWR(cached ? null : ["admin/member", id], async () => {
+    const { data, error } = await supabase.from("members").select("*").eq("id", id).single();
+    if (error) throw new Error(error.message);
+    return data;
+  });
+  const member: Member | undefined = cached ?? directQ.data;
 
-  const [member, setMember] = useState<Member | null>(null);
+  // What they hold right now, from the shared holdings cache.
+  const holdingsQ = useHoldings();
+  const holdersQ = useHolders();
+  const productsQ = useProducts();
+  const holding = useMemo(() => {
+    const holder = holdersQ.data?.find((h) => h.member_id === id);
+    if (!holder) return [];
+    const names = new Map((productsQ.data ?? []).map((p) => [p.id, p]));
+    return (holdingsQ.data ?? [])
+      .filter((h) => h.holder_id === holder.id && Number(h.qty) !== 0 && h.product_id)
+      .map((h) => ({ productId: h.product_id!, name: names.get(h.product_id!)?.name ?? "Unknown product", unit: names.get(h.product_id!)?.unit ?? "", qty: Number(h.qty) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [holdersQ.data, holdingsQ.data, productsQ.data, id]);
+
+  /** Non-null while the edit drawer is open. */
   const [form, setForm] = useState<FormState | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -79,34 +110,10 @@ export default function AdminMemberEditPage({
   const [pendingAction, setPendingAction] = useState<LifecycleAction | null>(null);
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setLoadError(null);
-      try {
-        const { data, error } = await supabase
-          .from("members")
-          .select("*")
-          .eq("id", id)
-          .single();
-        if (error) throw error;
-        if (cancelled) return;
-        setMember(data);
-        setForm(memberToForm(data));
-      } catch (err) {
-        if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : "Failed to load.");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  async function store(updated: Member) {
+    await upsertCached(KEYS.members, updated);
+    if (!cached) await directQ.mutate(updated, { revalidate: false });
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -121,7 +128,7 @@ export default function AdminMemberEditPage({
     }
     // Mirror the DB's `members_role_check` CHECK client-side.
     if (!ROLES.includes(form.role)) {
-      setSaveError("Role must be 'member' or 'admin'.");
+      setSaveError(`Role must be one of: ${ROLES.join(", ")}.`);
       return;
     }
 
@@ -149,8 +156,8 @@ export default function AdminMemberEditPage({
 
       if (error) throw error;
 
-      setMember(data);
-      setForm(memberToForm(data));
+      await store(data);
+      setForm(null);
       setSavedMessage("Saved.");
     } catch (err) {
       setSaveError(
@@ -195,8 +202,7 @@ export default function AdminMemberEditPage({
 
       if (error) throw error;
 
-      setMember(data);
-      setForm(memberToForm(data));
+      await store(data);
       setPendingAction(null);
       setSavedMessage(
         action === "unbind"
@@ -214,319 +220,255 @@ export default function AdminMemberEditPage({
     }
   }
 
-  if (loading) {
-    return <p className="text-sm text-neutral-400">Loading…</p>;
-  }
-
-  if (loadError || !member || !form) {
+  if (!member) {
+    const error = (directQ.error ?? membersQ.error) as Error | undefined;
+    if (error || (!directQ.isLoading && !membersQ.isLoading)) {
+      return (
+        <div className="space-y-4">
+          <Toast variant="error" message={error?.message ?? "Member not found."} />
+          <Link href="/admin/members" className="text-sm text-neutral-400 hover:text-neutral-100">
+            ← Back to members
+          </Link>
+        </div>
+      );
+    }
     return (
-      <div className="space-y-4">
-        <Toast variant="error" message={loadError ?? "Member not found."} />
-        <Link href="/admin/members" className="text-sm font-medium text-red-400">
-          &larr; Back to members
-        </Link>
+      <div className="flex flex-col gap-4">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-40 w-full" />
       </div>
     );
   }
 
+  const linked = member.telegram_user_id != null;
+  const profile: [string, React.ReactNode][] = [
+    ["Full name", member.full_name],
+    ["Display name", member.display_name],
+    ["NUS email", member.nus_email],
+    ["Role", member.role],
+    ["Joined", member.joined_at],
+    ["Left", member.left_at],
+  ];
+  const update = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setForm((p) => (p ? { ...p, [key]: e.target.value } : p));
+
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-6">
       <div>
-        <Link href="/admin/members" className="text-sm font-medium text-red-400">
-          &larr; Back to members
+        <Link href="/admin/members" className="text-sm text-neutral-500 hover:text-neutral-200">
+          ← Members
         </Link>
-        <h1 className="mt-1 text-xl font-semibold text-neutral-100">
-          Edit member: {member.display_name ?? member.full_name}
-        </h1>
+        <PageHeader
+          className="mt-2"
+          title={member.display_name ?? member.full_name}
+          description={member.nus_email ?? "No NUS email"}
+          actions={
+            <>
+              {member.role !== "member" ? <StatusPill tone="warning">{member.role}</StatusPill> : null}
+              {!member.active ? <StatusPill tone="inactive">inactive</StatusPill> : null}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setSaveError(null);
+                  setForm(memberToForm(member));
+                }}
+              >
+                Edit details
+              </Button>
+            </>
+          }
+        />
       </div>
 
-      <section className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-        {saveError ? (
-          <div className="mb-4">
-            <Toast variant="error" message={saveError} onDismiss={() => setSaveError(null)} />
-          </div>
-        ) : null}
-        {savedMessage ? (
-          <div className="mb-4">
-            <Toast
-              variant="success"
-              message={savedMessage}
-              onDismiss={() => setSavedMessage(null)}
-            />
-          </div>
-        ) : null}
+      {savedMessage ? <Toast variant="success" message={savedMessage} onDismiss={() => setSavedMessage(null)} /> : null}
+      {saveError && !form ? <Toast variant="error" message={saveError} onDismiss={() => setSaveError(null)} /> : null}
 
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-neutral-200">Full name *</span>
-            <input
-              required
-              value={form.full_name}
-              onChange={(e) =>
-                setForm((p) => (p ? { ...p, full_name: e.target.value } : p))
-              }
-              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
-            />
-          </label>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="flex min-w-0 flex-col gap-6 lg:col-span-2">
+          <Card title="Holding now" subtitle="From the ledger: what is out with them">
+            {holdingsQ.isLoading || holdersQ.isLoading ? (
+              <Skeleton className="h-16 w-full" />
+            ) : holding.length === 0 ? (
+              <p className="text-sm text-neutral-500">Nothing out with this member.</p>
+            ) : (
+              <ul className="divide-y divide-neutral-800/70">
+                {holding.map((line) => (
+                  <li key={line.productId}>
+                    <Link
+                      href={`/admin/products/${line.productId}`}
+                      className="flex items-center justify-between gap-3 py-2 text-sm transition-colors hover:text-neutral-100"
+                    >
+                      <span className="truncate text-neutral-200">{line.name}</span>
+                      <span className="tabular-nums text-neutral-400">
+                        {line.qty} <span className="text-neutral-600">{line.unit}</span>
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
 
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-neutral-200">Display name</span>
-            <input
-              value={form.display_name}
-              onChange={(e) =>
-                setForm((p) => (p ? { ...p, display_name: e.target.value } : p))
-              }
-              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
-            />
-          </label>
+          <Card title="Profile">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+              {profile
+                .filter(([, value]) => value)
+                .map(([label, value]) => (
+                  <div key={label} className="contents">
+                    <dt className="text-neutral-500">{label}</dt>
+                    <dd className="min-w-0 wrap-break-word text-neutral-200">{value}</dd>
+                  </div>
+                ))}
+            </dl>
+          </Card>
+        </div>
 
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-neutral-200">NUS email</span>
-            <input
-              type="email"
-              value={form.nus_email}
-              onChange={(e) =>
-                setForm((p) => (p ? { ...p, nus_email: e.target.value } : p))
-              }
-              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
-            />
-            <span className="text-xs text-neutral-400">
-              Must exactly match this member&apos;s Supabase Auth email for
-              them to sign into /admin, if their role is admin.
-            </span>
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-neutral-200">Telegram username</span>
-            <input
-              value={form.telegram_username}
-              onChange={(e) =>
-                setForm((p) =>
-                  p ? { ...p, telegram_username: e.target.value } : p,
-                )
-              }
-              placeholder="without @"
-              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-neutral-200">Role</span>
-            <select
-              value={form.role}
-              onChange={(e) =>
-                setForm((p) =>
-                  p ? { ...p, role: e.target.value as Role } : p,
-                )
-              }
-              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
-            >
-              {ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="flex items-center gap-4 pt-6">
-            <label className="flex items-center gap-2 text-sm text-neutral-200">
-              <input
-                type="checkbox"
-                checked={form.active}
-                onChange={(e) =>
-                  setForm((p) => (p ? { ...p, active: e.target.checked } : p))
-                }
-              />
-              Active
-            </label>
-          </div>
-
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-neutral-200">Joined</span>
-            <input
-              type="date"
-              value={form.joined_at}
-              onChange={(e) =>
-                setForm((p) => (p ? { ...p, joined_at: e.target.value } : p))
-              }
-              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-neutral-200">Left</span>
-            <input
-              type="date"
-              value={form.left_at}
-              onChange={(e) =>
-                setForm((p) => (p ? { ...p, left_at: e.target.value } : p))
-              }
-              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <div className="flex flex-col gap-1 text-sm sm:col-span-2">
-            <span className="font-medium text-neutral-200">
-              Telegram binding (read-only)
-            </span>
-            <p className="rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-300">
-              telegram_user_id: {member.telegram_user_id ?? "—"}
-              <br />
-              telegram_bound_at:{" "}
-              {member.telegram_bound_at
-                ? new Date(member.telegram_bound_at).toLocaleString()
-                : "—"}
-            </p>
-            <span className="text-xs text-neutral-400">
-              Set only via the{" "}
-              <Link href="/admin/bind-queue" className="text-red-400 hover:text-red-300">
-                bind queue
-              </Link>{" "}
-              when the member first messages the bot -- not editable here. To
-              clear it, use the actions below.
-            </span>
-          </div>
-
-          <div className="sm:col-span-2">
-            <Button type="submit" disabled={saving}>
-              {saving ? "Saving…" : "Save changes"}
-            </Button>
-          </div>
-        </form>
-      </section>
-
-      {/*
-        Offboarding / unbinding. Separated from the form above rather than
-        folded into it: these are one-click state changes with consequences
-        the form's own "Active" checkbox doesn't have (they clear the
-        binding), and burying a destructive action behind "Save changes"
-        makes it far too easy to trigger by accident.
-      */}
-      <section className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-        <h2 className="text-sm font-semibold text-neutral-100">
-          Binding &amp; offboarding
-        </h2>
-        <p className="mt-1 text-sm text-neutral-400">
-          Honours the commitment in{" "}
-          <code className="rounded bg-neutral-800 px-1 py-0.5 text-xs">docs/tele-qr/pdpa.md</code>
-          : on leaving the club, or on request, the Telegram account is
-          unlinked and the member deactivated. Borrowing history is{" "}
-          <span className="font-medium text-neutral-300">kept</span> — it is a
-          club inventory record, not a personal profile, and nothing here
-          deletes a movement.
-        </p>
-
-        <div className="mt-4 flex flex-col gap-4">
-          {/* Unbind only -- flows.md §5's "they changed their Telegram handle" case. */}
-          <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-3">
-            <p className="text-sm font-medium text-neutral-200">Unbind Telegram only</p>
-            <p className="mt-1 text-xs text-neutral-400">
-              Clears{" "}
-              <code className="rounded bg-neutral-800 px-1 py-0.5">telegram_user_id</code> and{" "}
-              <code className="rounded bg-neutral-800 px-1 py-0.5">telegram_bound_at</code>{" "}
-              but leaves the member active. Use this when someone changed their
-              Telegram handle or switched account — they re-bind by messaging
-              the bot again. The stored handle is left alone so the bind queue
-              can still match them.
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              {pendingAction === "unbind" ? (
-                <>
-                  <span className="text-xs text-amber-400">
-                    Clear this member&apos;s Telegram binding?
-                  </span>
-                  <Button
-                    variant="danger"
-                    className="min-h-0 px-2 py-1 text-xs"
+        <div className="flex min-w-0 flex-col gap-6">
+          <Card
+            title="Telegram"
+            info="Linked only by the member themselves (a join code, or messaging the bot and being matched in the bind queue). Never typed in here."
+          >
+            <div className="flex flex-col gap-3 text-sm">
+              <p className="flex items-center gap-2">
+                <span aria-hidden className={`size-2 rounded-full ${linked ? "bg-status-good" : "bg-neutral-600"}`} />
+                <span className="text-neutral-200">{linked ? "Linked" : "Not linked"}</span>
+                {member.telegram_username ? <span className="text-neutral-500">@{member.telegram_username}</span> : null}
+              </p>
+              {member.telegram_bound_at ? (
+                <p className="text-xs text-neutral-500">Since {new Date(member.telegram_bound_at).toLocaleString()}</p>
+              ) : null}
+              {linked ? (
+                pendingAction === "unbind" ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-amber-400">Clear the binding? They stay active and can re-link.</span>
+                    <Button variant="danger" size="sm" disabled={lifecycleBusy} onClick={() => runLifecycleAction("unbind")}>
+                      {lifecycleBusy ? "Unbinding…" : "Yes, unbind"}
+                    </Button>
+                    <Button variant="ghost" size="sm" disabled={lifecycleBusy} onClick={() => setPendingAction(null)}>
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
                     disabled={lifecycleBusy}
-                    onClick={() => runLifecycleAction("unbind")}
+                    onClick={() => setPendingAction("unbind")}
+                    className="self-start cursor-pointer text-sm text-neutral-400 underline-offset-4 hover:text-neutral-100 hover:underline"
                   >
-                    {lifecycleBusy ? "Unbinding…" : "Yes, unbind"}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="min-h-0 px-2 py-1 text-xs"
-                    disabled={lifecycleBusy}
-                    onClick={() => setPendingAction(null)}
-                  >
-                    Cancel
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  variant="secondary"
-                  className="min-h-0 px-2 py-1 text-xs"
-                  disabled={lifecycleBusy || member.telegram_user_id == null}
-                  onClick={() => setPendingAction("unbind")}
-                >
-                  Unbind Telegram
-                </Button>
-              )}
-              {member.telegram_user_id == null && pendingAction !== "unbind" ? (
-                <span className="text-xs text-neutral-500">
-                  Nothing to unbind — this member has never bound an account.
-                </span>
+                    Unbind (changed handle or account)
+                  </button>
+                )
               ) : null}
             </div>
-          </div>
+          </Card>
 
-          {/* Full offboard. */}
-          <div className="rounded-lg border border-amber-500/30 bg-neutral-950 p-3">
-            <p className="text-sm font-medium text-neutral-200">Offboard member</p>
-            <p className="mt-1 text-xs text-neutral-400">
-              Unlinks Telegram, sets{" "}
-              <code className="rounded bg-neutral-800 px-1 py-0.5">active = false</code>, and
-              stamps{" "}
-              <code className="rounded bg-neutral-800 px-1 py-0.5">left_at</code>
-              {member.left_at ? ` (already ${member.left_at}; kept as-is)` : " with today's date"}.
-              The lockout is immediate: every Mini App request re-checks{" "}
-              <code className="rounded bg-neutral-800 px-1 py-0.5">active</code> against the
-              database, so it takes effect on their next request. Reversible by
-              re-ticking Active above, but they must re-bind through the bind
-              queue.
+          {/*
+            Offboarding sits apart from Edit on purpose: it is a one-click
+            state change with consequences the Active checkbox doesn't have
+            (it clears the binding), and burying it behind "Save" would make
+            it far too easy to trigger by accident.
+          */}
+          <section className="rounded-xl border border-amber-500/25 p-4">
+            <h2 className="flex items-center gap-1 text-base font-semibold text-neutral-100">Offboard</h2>
+            <p className="mt-1 text-sm text-neutral-400">
+              Unlinks Telegram and deactivates them, effective on their next request. Their borrowing history is kept
+              (docs/tele-qr/pdpa.md).
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {pendingAction === "offboard" ? (
                 <>
                   <span className="text-xs text-amber-400">
-                    Offboard {member.display_name ?? member.full_name}? They lose access
-                    immediately; their history is kept.
+                    Offboard {member.display_name ?? member.full_name}?
                   </span>
-                  <Button
-                    variant="danger"
-                    className="min-h-0 px-2 py-1 text-xs"
-                    disabled={lifecycleBusy}
-                    onClick={() => runLifecycleAction("offboard")}
-                  >
+                  <Button variant="danger" size="sm" disabled={lifecycleBusy} onClick={() => runLifecycleAction("offboard")}>
                     {lifecycleBusy ? "Offboarding…" : "Yes, offboard"}
                   </Button>
-                  <Button
-                    variant="ghost"
-                    className="min-h-0 px-2 py-1 text-xs"
-                    disabled={lifecycleBusy}
-                    onClick={() => setPendingAction(null)}
-                  >
+                  <Button variant="ghost" size="sm" disabled={lifecycleBusy} onClick={() => setPendingAction(null)}>
                     Cancel
                   </Button>
                 </>
-              ) : (
-                <Button
-                  variant="danger"
-                  className="min-h-0 px-2 py-1 text-xs"
-                  disabled={lifecycleBusy}
-                  onClick={() => setPendingAction("offboard")}
-                >
+              ) : member.active ? (
+                <Button variant="secondary" size="sm" disabled={lifecycleBusy} onClick={() => setPendingAction("offboard")}>
                   Offboard member
                 </Button>
+              ) : (
+                <span className="text-sm text-neutral-500">
+                  Already inactive{member.left_at ? ` since ${member.left_at}` : ""}.
+                </span>
               )}
-              {!member.active && pendingAction !== "offboard" ? (
-                <span className="text-xs text-neutral-500">Already inactive.</span>
-              ) : null}
             </div>
-          </div>
+          </section>
         </div>
-      </section>
+      </div>
+
+      <Drawer
+        open={form !== null}
+        onClose={() => setForm(null)}
+        title="Edit member"
+        description={member.full_name}
+        footer={
+          <>
+            <Button type="submit" form="edit-member" size="sm" disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setForm(null)}>
+              Cancel
+            </Button>
+            {saveError ? <p className="text-sm text-red-400">{saveError}</p> : null}
+          </>
+        }
+      >
+        {form ? (
+          <form id="edit-member" onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <label className={LABEL}>
+              <span className={CAPTION}>Full name *</span>
+              <input required value={form.full_name} onChange={update("full_name")} className={FIELD} />
+            </label>
+            <label className={LABEL}>
+              <span className={CAPTION}>Display name</span>
+              <input value={form.display_name} onChange={update("display_name")} className={FIELD} />
+            </label>
+            <label className={LABEL}>
+              <span className={CAPTION}>NUS email</span>
+              <input type="email" value={form.nus_email} onChange={update("nus_email")} className={FIELD} />
+              <span className={HELP}>For staff, must exactly match their sign-in email.</span>
+            </label>
+            <label className={LABEL}>
+              <span className={CAPTION}>Telegram username</span>
+              <input value={form.telegram_username} onChange={update("telegram_username")} placeholder="without @" className={FIELD} />
+            </label>
+            <div className="grid grid-cols-2 gap-4">
+              <label className={LABEL}>
+                <span className={CAPTION}>Role</span>
+                <select value={form.role} onChange={update("role")} className={FIELD}>
+                  {ROLES.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-2 self-end pb-2.5 text-sm text-neutral-300">
+                <input
+                  type="checkbox"
+                  checked={form.active}
+                  onChange={(e) => setForm((p) => (p ? { ...p, active: e.target.checked } : p))}
+                />
+                Active
+              </label>
+              <label className={LABEL}>
+                <span className={CAPTION}>Joined</span>
+                <input type="date" value={form.joined_at} onChange={update("joined_at")} className={FIELD} />
+              </label>
+              <label className={LABEL}>
+                <span className={CAPTION}>Left</span>
+                <input type="date" value={form.left_at} onChange={update("left_at")} className={FIELD} />
+              </label>
+            </div>
+          </form>
+        ) : null}
+      </Drawer>
     </div>
   );
 }

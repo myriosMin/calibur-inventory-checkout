@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
-import Card from "@/components/admin/Card";
 import DataTable, { type Column } from "@/components/admin/DataTable";
+import Drawer from "@/components/admin/Drawer";
+import { FIELD_AREA } from "@/components/admin/form";
+import InfoTip from "@/components/admin/InfoTip";
 import StatusPill from "@/components/admin/StatusPill";
 import Button from "@/components/ui/Button";
 import Toast from "@/components/ui/Toast";
@@ -17,9 +19,11 @@ import {
   type RosterPlanEntry,
 } from "@/lib/csv/member-roster";
 import { getBrowserClient } from "@/lib/supabase/browser";
+import { fetchAllRows } from "@/lib/supabase/fetch-all";
 
 /**
- * Bulk roster import for /admin/members.
+ * Bulk roster import for /admin/members, in a drawer opened from the page
+ * header.
  *
  * `docs/tele-qr/operations.md` §1.3 budgets member provisioning as "~1 hr for
  * 120 members" on the explicit basis that it is "a bulk import, not a
@@ -65,11 +69,18 @@ const OUTCOME_LABEL: Record<Outcome, string> = {
   failed: "Failed",
 };
 
-export default function MemberImport({ onImported }: { onImported: () => void }) {
-  const supabase = useMemo(() => getBrowserClient(), []);
+export default function MemberImport({
+  open,
+  onClose,
+  onImported,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  const supabase = getBrowserClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [open, setOpen] = useState(false);
   const [csvText, setCsvText] = useState("");
   const [parsed, setParsed] = useState<ParsedRoster | null>(null);
   const [plan, setPlan] = useState<RosterPlan | null>(null);
@@ -111,12 +122,13 @@ export default function MemberImport({ onImported }: { onImported: () => void })
         return;
       }
 
-      const { data, error } = await supabase
-        .from("members")
-        .select("nus_email, telegram_username");
-      if (error) throw error;
+      // Paged: an unpaged read stops at 1000 rows, and a duplicate past that
+      // would be planned as "create" and then fail.
+      const existing = await fetchAllRows((from, to) =>
+        supabase.from("members").select("nus_email, telegram_username").order("id").range(from, to),
+      );
 
-      setPlan(planRosterImport(parsedRoster.rows, data ?? []));
+      setPlan(planRosterImport(parsedRoster.rows, existing));
     } catch (err) {
       setPlan(null);
       setFeedback({
@@ -267,149 +279,130 @@ export default function MemberImport({ onImported }: { onImported: () => void })
   ];
 
   return (
-    <Card
-      title="Bulk import from CSV"
-      actions={
-        <Button
-          variant="secondary"
-          className="min-h-0 px-2 py-1 text-xs"
-          onClick={() => {
-            setOpen((prev) => !prev);
-            if (open) {
-              resetPreview();
-              setFeedback(null);
-            }
-          }}
-        >
-          {open ? "Close" : "Open importer"}
-        </Button>
-      }
-      padded={false}
-    >
-      {!open ? (
-        <p className="p-4 text-sm text-neutral-400">
-          Provision the whole roster in one pass instead of one member at a time. Handles are
-          normalised (lowercased, leading <code className="rounded bg-neutral-800 px-1 py-0.5 text-xs">@</code>{" "}
-          stripped), duplicates are skipped rather than failing the batch, and members with no
-          Telegram handle are imported normally — they bind through the bind queue later.
-        </p>
-      ) : (
-        <div className="flex flex-col gap-4 p-4">
-          {feedback ? (
-            <Toast
-              variant={feedback.variant}
-              message={feedback.message}
-              onDismiss={() => setFeedback(null)}
-            />
-          ) : null}
-
-          <label className="flex flex-col gap-1 text-sm text-neutral-200">
-            Roster CSV
-            <textarea
-              value={csvText}
-              onChange={(e) => {
-                setCsvText(e.target.value);
-                resetPreview();
-              }}
-              rows={8}
-              spellCheck={false}
-              placeholder={ROSTER_CSV_EXAMPLE}
-              className="rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-xs text-neutral-100"
-            />
-            <span className="text-xs text-neutral-400">
-              First row must be a header. Recognised columns: <code>full_name</code> (required),{" "}
-              <code>display_name</code>, <code>nus_email</code>, <code>telegram_username</code>,{" "}
-              <code>role</code>, <code>joined_at</code> (YYYY-MM-DD). Anything else is ignored.
-            </span>
-          </label>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv,text/csv,text/plain"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void handleFile(file);
-                e.target.value = "";
-              }}
-            />
-            <Button
-              variant="secondary"
-              className="min-h-0 px-2 py-1 text-xs"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              Upload file
+    <Drawer
+      open={open}
+      onClose={() => {
+        onClose();
+        resetPreview();
+        setFeedback(null);
+      }}
+      title="Import roster"
+      description="Paste or upload a CSV. Nothing is written until you import."
+      size="lg"
+      footer={
+        <>
+          {plan ? (
+            <Button size="sm" disabled={importing || plan.toInsert === 0} onClick={handleImport}>
+              {importing ? "Importing…" : `Import ${plan.toInsert} member${plan.toInsert === 1 ? "" : "s"}`}
             </Button>
-            <Button
-              className="min-h-0 px-2 py-1 text-xs"
-              disabled={previewing || importing || !csvText.trim()}
-              onClick={handlePreview}
-            >
+          ) : (
+            <Button size="sm" disabled={previewing || importing || !csvText.trim()} onClick={handlePreview}>
               {previewing ? "Checking…" : "Preview"}
             </Button>
-            {csvText ? (
-              <Button
-                variant="ghost"
-                className="min-h-0 px-2 py-1 text-xs"
-                disabled={importing}
-                onClick={() => {
-                  setCsvText("");
-                  resetPreview();
-                  setFeedback(null);
-                }}
-              >
-                Clear
-              </Button>
-            ) : null}
-          </div>
-
-          {parsed?.fatalError ? <Toast variant="error" message={parsed.fatalError} /> : null}
-
-          {parsed && !parsed.fatalError && parsed.ignoredColumns.length > 0 ? (
-            <p className="text-xs text-neutral-400">
-              Ignored unrecognised column{parsed.ignoredColumns.length === 1 ? "" : "s"}:{" "}
-              {parsed.ignoredColumns.join(", ")}
-            </p>
+          )}
+          <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()}>
+            Upload file
+          </Button>
+          {csvText ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={importing}
+              onClick={() => {
+                setCsvText("");
+                resetPreview();
+                setFeedback(null);
+              }}
+            >
+              Clear
+            </Button>
           ) : null}
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {feedback ? (
+          <Toast variant={feedback.variant} message={feedback.message} onDismiss={() => setFeedback(null)} />
+        ) : null}
 
-          {plan ? (
-            <div className="flex flex-col gap-3">
-              <p className="text-sm text-neutral-300">
-                <span className="font-medium text-neutral-100">{plan.toInsert}</span> to create,{" "}
-                {plan.skippedDuplicate} already exist (skipped), {plan.invalid} invalid.
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,text/csv,text/plain"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void handleFile(file);
+            e.target.value = "";
+          }}
+        />
+
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="flex items-center gap-1 font-medium text-neutral-300">
+            Roster CSV
+            <InfoTip label="CSV format">
+              <p>
+                First row must be a header. Recognised columns: <code>full_name</code> (required),{" "}
+                <code>display_name</code>, <code>nus_email</code>, <code>telegram_username</code>, <code>role</code>,{" "}
+                <code>joined_at</code> (YYYY-MM-DD). Anything else is ignored.
               </p>
-              <div className="max-h-96 overflow-y-auto rounded-lg border border-neutral-800">
-                <DataTable
-                  columns={previewColumns}
-                  rows={plan.entries}
-                  rowKey={(e) => String(e.row.line)}
-                  emptyMessage="No data rows found under the header."
-                />
-              </div>
-              <div>
-                <Button disabled={importing || plan.toInsert === 0} onClick={handleImport}>
-                  {importing
-                    ? "Importing…"
-                    : `Import ${plan.toInsert} member${plan.toInsert === 1 ? "" : "s"}`}
-                </Button>
-              </div>
-            </div>
-          ) : null}
+              <p>
+                Handles are normalised (lowercased, leading @ stripped), duplicates are skipped rather than failing
+                the batch, and members with no Telegram handle bind later through the bind queue.
+              </p>
+            </InfoTip>
+          </span>
+          <textarea
+            value={csvText}
+            onChange={(e) => {
+              setCsvText(e.target.value);
+              resetPreview();
+            }}
+            rows={8}
+            spellCheck={false}
+            placeholder={ROSTER_CSV_EXAMPLE}
+            className={`${FIELD_AREA} font-mono text-xs`}
+          />
+        </label>
 
-          {results ? (
+        {parsed?.fatalError ? <Toast variant="error" message={parsed.fatalError} /> : null}
+
+        {parsed && !parsed.fatalError && parsed.ignoredColumns.length > 0 ? (
+          <p className="text-xs text-neutral-500">
+            Ignored unrecognised column{parsed.ignoredColumns.length === 1 ? "" : "s"}: {parsed.ignoredColumns.join(", ")}
+          </p>
+        ) : null}
+
+        {plan ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-neutral-300">
+              <span className="font-medium text-neutral-100">{plan.toInsert}</span> to create, {plan.skippedDuplicate}{" "}
+              already exist (skipped), {plan.invalid} invalid.
+            </p>
             <div className="max-h-96 overflow-y-auto rounded-lg border border-neutral-800">
               <DataTable
-                columns={resultColumns}
-                rows={results}
-                rowKey={(r) => String(r.line)}
-                emptyMessage="Nothing was imported."
+                columns={previewColumns}
+                rows={plan.entries}
+                rowKey={(e) => String(e.row.line)}
+                emptyMessage="No data rows found under the header."
+                pageSize={Infinity}
               />
             </div>
-          ) : null}
-        </div>
-      )}
-    </Card>
+          </div>
+        ) : null}
+
+        {results ? (
+          <div className="max-h-96 overflow-y-auto rounded-lg border border-neutral-800">
+            <DataTable
+              columns={resultColumns}
+              rows={results}
+              rowKey={(r) => String(r.line)}
+              emptyMessage="Nothing was imported."
+              pageSize={Infinity}
+            />
+          </div>
+        ) : null}
+      </div>
+    </Drawer>
   );
 }

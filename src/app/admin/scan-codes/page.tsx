@@ -1,10 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 
+import ActionMenu from "@/components/admin/ActionMenu";
+import Card from "@/components/admin/Card";
+import DataTable, { type Column } from "@/components/admin/DataTable";
+import Drawer from "@/components/admin/Drawer";
+import { CAPTION, FIELD, FILTER, HELP, LABEL } from "@/components/admin/form";
+import PageHeader from "@/components/admin/PageHeader";
+import Segmented from "@/components/admin/Segmented";
+import StatusPill from "@/components/admin/StatusPill";
 import Button from "@/components/ui/Button";
+import { IconPlus, IconPrinter, IconSearch } from "@/components/ui/icons";
 import Toast from "@/components/ui/Toast";
+import { KEYS, revalidate, useLocations, useProducts, useScanCodes } from "@/lib/admin/queries";
 import { insertScanCodeWithRetry } from "@/lib/codes/insert";
 import { getBrowserClient } from "@/lib/supabase/browser";
 import type { Tables } from "@/lib/types/database";
@@ -21,67 +31,32 @@ interface FeedbackState {
 }
 
 export default function AdminScanCodesPage() {
-  const supabase = useMemo(() => getBrowserClient(), []);
+  const supabase = getBrowserClient();
 
-  const [scanCodes, setScanCodes] = useState<ScanCode[]>([]);
-  const [products, setProducts] = useState<ProductOption[]>([]);
-  const [locations, setLocations] = useState<LocationOption[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Shared, paged, cached lists (src/lib/admin/queries.ts) -- the Labels
+  // tab reads the same ones, so switching between the two is instant.
+  const codesQ = useScanCodes();
+  const productsQ = useProducts();
+  const locationsQ = useLocations();
+  const scanCodes: ScanCode[] = useMemo(() => codesQ.data ?? [], [codesQ.data]);
+  const products: ProductOption[] = useMemo(() => productsQ.data ?? [], [productsQ.data]);
+  const locations: LocationOption[] = useMemo(() => locationsQ.data ?? [], [locationsQ.data]);
+  const loading = codesQ.isLoading;
+  const loadAll = () => revalidate(KEYS.scanCodes);
+
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const [lastCreatedCode, setLastCreatedCode] = useState<string | null>(null);
   const [busyCode, setBusyCode] = useState<string | null>(null);
+  const [status, setStatus] = useState<"active" | "retired" | "all">("active");
+  const [query, setQuery] = useState("");
 
   // Create-form state.
+  const [formOpen, setFormOpen] = useState(false);
   const [kind, setKind] = useState<Kind>("product");
   const [productId, setProductId] = useState("");
   const [locationId, setLocationId] = useState("");
   const [label, setLabel] = useState("");
   const [creating, setCreating] = useState(false);
-
-  const loadAll = useCallback(async () => {
-    setLoading(true);
-    const [scanCodesRes, productsRes, locationsRes] = await Promise.all([
-      supabase
-        .from("scan_codes")
-        .select("*")
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("products")
-        .select("id, name, tier, active")
-        .order("name", { ascending: true }),
-      supabase.from("locations").select("id, name").order("name", { ascending: true }),
-    ]);
-
-    if (scanCodesRes.error) {
-      setFeedback({ variant: "error", message: `Failed to load scan codes: ${scanCodesRes.error.message}` });
-    } else {
-      setScanCodes(scanCodesRes.data ?? []);
-    }
-    if (productsRes.error) {
-      setFeedback({ variant: "error", message: `Failed to load products: ${productsRes.error.message}` });
-    } else {
-      setProducts(productsRes.data ?? []);
-    }
-    if (locationsRes.error) {
-      setFeedback({ variant: "error", message: `Failed to load locations: ${locationsRes.error.message}` });
-    } else {
-      setLocations(locationsRes.data ?? []);
-    }
-    setLoading(false);
-  }, [supabase]);
-
-  useEffect(() => {
-    // Mount-only fetch; `cancelled` guards against setting state after
-    // unmount if the request is still in flight (matches the pattern in
-    // src/app/admin/holders/page.tsx).
-    let cancelled = false;
-    (async () => {
-      if (!cancelled) await loadAll();
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [loadAll]);
 
   const productsById = useMemo(() => {
     const map = new Map<string, ProductOption>();
@@ -140,6 +115,7 @@ export default function AdminScanCodesPage() {
       setLabel("");
       setProductId("");
       setLocationId("");
+      setFormOpen(false);
       await loadAll();
     } catch (err) {
       setFeedback({
@@ -218,202 +194,210 @@ export default function AdminScanCodesPage() {
     }
   }
 
+  const activeCount = scanCodes.filter((row) => row.active).length;
+  const visible = scanCodes.filter((row) => {
+    if (status === "active" && !row.active) return false;
+    if (status === "retired" && row.active) return false;
+    const needle = query.trim().toLowerCase();
+    if (!needle) return true;
+    return (
+      row.code.toLowerCase().includes(needle) ||
+      describeTarget(row).toLowerCase().includes(needle) ||
+      (row.label ?? "").toLowerCase().includes(needle)
+    );
+  });
+
+  const columns: Column<ScanCode>[] = [
+    {
+      key: "code",
+      header: "Code",
+      render: (row) => (
+        <span className={`font-mono ${row.code === lastCreatedCode ? "text-green-400" : "text-neutral-100"}`}>{row.code}</span>
+      ),
+    },
+    {
+      key: "target",
+      header: "Points at",
+      render: (row) => (
+        <span className="block min-w-48">
+          <span className="text-neutral-200">{describeTarget(row)}</span>
+          {row.label ? <span className="block text-xs text-neutral-500">{row.label}</span> : null}
+        </span>
+      ),
+    },
+    {
+      key: "kind",
+      header: "Kind",
+      render: (row) =>
+        row.kind === "group" ? <StatusPill tone="warning">group</StatusPill> : <span className="text-neutral-500">product</span>,
+    },
+    {
+      key: "status",
+      header: "",
+      render: (row) => (row.active ? null : <StatusPill tone="inactive">retired</StatusPill>),
+    },
+    {
+      key: "actions",
+      header: "",
+      className: "text-right whitespace-nowrap",
+      render: (row) =>
+        row.active ? (
+          <span className="inline-flex items-center gap-1">
+            <Link
+              href={`/admin/labels?code=${encodeURIComponent(row.code)}`}
+              className="inline-flex size-9 items-center justify-center rounded-lg text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100"
+              aria-label={`Print label ${row.code}`}
+              title="Print label"
+            >
+              <IconPrinter size={17} />
+            </Link>
+            <ActionMenu
+              ariaLabel={`More actions for ${row.code}`}
+              items={[
+                {
+                  label: "Regenerate",
+                  hint: "New code for a damaged label; retires this one",
+                  disabled: busyCode === row.code,
+                  onSelect: () => void handleRegenerate(row),
+                },
+                {
+                  label: "Retire",
+                  hint: "The sticker will scan as retired",
+                  tone: "danger",
+                  disabled: busyCode === row.code,
+                  onSelect: () => void handleRetire(row),
+                },
+              ]}
+            />
+          </span>
+        ) : null,
+    },
+  ];
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-neutral-100">Scan codes</h1>
-        <p className="mt-1 text-sm text-neutral-300">
-          Every code points at exactly one product (a single-item label) or one location (a
-          group label, e.g. a resistor-book page). Codes are opaque and auto-generated -- never
-          typed in by hand. Retiring a code never deletes it: a stale sticker resolves to a clean
-          &quot;retired&quot; instead of silently hitting the wrong item.
-        </p>
-      </div>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title="Scan codes"
+        description={loading ? "What each QR sticker points at." : `${activeCount} live codes. Each points at one product or one shelf.`}
+        info={
+          <>
+            <p>
+              A product code is a single-item label; a group code is a location (a resistor-book page) where the
+              member picks from a list.
+            </p>
+            <p>
+              Codes are opaque and generated, never typed. Retiring never deletes: a stale sticker scans as
+              &ldquo;retired&rdquo; instead of silently hitting the wrong item.
+            </p>
+          </>
+        }
+        actions={
+          <Button size="sm" onClick={() => setFormOpen(true)}>
+            <IconPlus size={16} />
+            New code
+          </Button>
+        }
+      />
 
-      {feedback ? (
-        <Toast
-          variant={feedback.variant}
-          message={feedback.message}
-          onDismiss={() => setFeedback(null)}
+      {feedback ? <Toast variant={feedback.variant} message={feedback.message} onDismiss={() => setFeedback(null)} /> : null}
+
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <Segmented
+          ariaLabel="Code status"
+          value={status}
+          onChange={setStatus}
+          options={[
+            { value: "active", label: "Live", count: activeCount },
+            { value: "retired", label: "Retired", count: scanCodes.length - activeCount },
+            { value: "all", label: "All", count: scanCodes.length },
+          ]}
         />
-      ) : null}
-
-      {lastCreatedCode ? (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          Generated code: <span className="font-mono text-base font-semibold">{lastCreatedCode}</span>
-          {" "}— print this on the label.
-        </div>
-      ) : null}
-
-      <form
-        onSubmit={handleCreate}
-        className="space-y-4 rounded-xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm"
-      >
-        <h2 className="text-sm font-semibold text-neutral-100">Create a new code</h2>
-
-        <div className="flex flex-wrap gap-4">
-          <label className="flex items-center gap-2 text-sm text-neutral-200">
-            <input
-              type="radio"
-              name="kind"
-              value="product"
-              checked={kind === "product"}
-              onChange={() => setKind("product")}
-            />
-            Product (single item)
-          </label>
-          <label className="flex items-center gap-2 text-sm text-neutral-200">
-            <input
-              type="radio"
-              name="kind"
-              value="group"
-              checked={kind === "group"}
-              onChange={() => setKind("group")}
-            />
-            Group (a location, e.g. resistor-book page)
-          </label>
-        </div>
-
-        {kind === "product" ? (
-          <div>
-            <label className="mb-1 block text-sm font-medium text-neutral-200" htmlFor="product-select">
-              Product
-            </label>
-            <select
-              id="product-select"
-              value={productId}
-              onChange={(e) => setProductId(e.target.value)}
-              className="w-full max-w-md rounded-lg border border-neutral-700 px-3 py-2 text-sm"
-            >
-              <option value="">Select a product…</option>
-              {activeProducts.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.tier})
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : (
-          <div>
-            <label className="mb-1 block text-sm font-medium text-neutral-200" htmlFor="location-select">
-              Location
-            </label>
-            <select
-              id="location-select"
-              value={locationId}
-              onChange={(e) => setLocationId(e.target.value)}
-              className="w-full max-w-md rounded-lg border border-neutral-700 px-3 py-2 text-sm"
-            >
-              <option value="">Select a location…</option>
-              {locations.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        <div>
-          <label className="mb-1 block text-sm font-medium text-neutral-200" htmlFor="label-input">
-            Label (free text, optional)
-          </label>
+        <label className="relative block">
+          <span className="sr-only">Search codes</span>
+          <IconSearch size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
           <input
-            id="label-input"
-            type="text"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="e.g. Table Shelf A3"
-            className="w-full max-w-md rounded-lg border border-neutral-700 px-3 py-2 text-sm"
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Code, product or shelf…"
+            className={`${FILTER} w-64 pl-9`}
           />
-        </div>
-
-        <Button type="submit" disabled={creating}>
-          {creating ? "Creating…" : "Generate code"}
-        </Button>
-      </form>
-
-      <div className="rounded-xl border border-neutral-800 bg-neutral-900 shadow-sm">
-        <div className="border-b border-neutral-800 px-4 py-3">
-          <h2 className="text-sm font-semibold text-neutral-100">All codes</h2>
-        </div>
-        {loading ? (
-          <p className="p-4 text-sm text-neutral-400">Loading…</p>
-        ) : scanCodes.length === 0 ? (
-          <p className="p-4 text-sm text-neutral-400">No scan codes yet.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-neutral-800 text-neutral-400">
-                <tr>
-                  <th className="px-4 py-2 font-medium">Code</th>
-                  <th className="px-4 py-2 font-medium">Kind</th>
-                  <th className="px-4 py-2 font-medium">Target</th>
-                  <th className="px-4 py-2 font-medium">Label</th>
-                  <th className="px-4 py-2 font-medium">Status</th>
-                  <th className="px-4 py-2 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {scanCodes.map((row) => (
-                  <tr key={row.code} className="border-b border-neutral-800 last:border-0">
-                    <td className="px-4 py-2 font-mono">{row.code}</td>
-                    <td className="px-4 py-2 capitalize">{row.kind}</td>
-                    <td className="px-4 py-2">{describeTarget(row)}</td>
-                    <td className="px-4 py-2 text-neutral-300">{row.label ?? "—"}</td>
-                    <td className="px-4 py-2">
-                      {row.active ? (
-                        <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-400">
-                          Active
-                        </span>
-                      ) : (
-                        <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-xs font-medium text-neutral-300">
-                          Retired
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2">
-                      {row.active ? (
-                        <div className="flex gap-2">
-                          {/* Reprint hands off to /admin/labels, which owns
-                              the QR rendering and the sticker-sheet print
-                              CSS -- a single sticker is just a batch of one,
-                              and duplicating the geometry here is how the
-                              two would drift apart. */}
-                          <Link
-                            href={`/admin/labels?code=${encodeURIComponent(row.code)}`}
-                            className="inline-flex min-h-0 items-center justify-center rounded-lg bg-neutral-800 px-2 py-1 text-xs font-medium uppercase tracking-wide text-neutral-100 transition-colors hover:bg-neutral-700"
-                          >
-                            Print label
-                          </Link>
-                          <Button
-                            variant="secondary"
-                            className="min-h-0 px-2 py-1 text-xs"
-                            disabled={busyCode === row.code}
-                            onClick={() => handleRegenerate(row)}
-                          >
-                            {busyCode === row.code ? "Working…" : "Regenerate"}
-                          </Button>
-                          <Button
-                            variant="danger"
-                            className="min-h-0 px-2 py-1 text-xs"
-                            disabled={busyCode === row.code}
-                            onClick={() => handleRetire(row)}
-                          >
-                            Retire
-                          </Button>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-neutral-600">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        </label>
       </div>
+
+      <Card padded={false}>
+        <DataTable
+          columns={columns}
+          rows={visible}
+          rowKey={(row) => row.code}
+          loading={loading}
+          error={(codesQ.error as Error | undefined)?.message ?? null}
+          emptyMessage={scanCodes.length === 0 ? "No scan codes yet." : "No codes match."}
+        />
+      </Card>
+
+      <Drawer
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        title="New scan code"
+        description="A fresh opaque code. Print its label afterwards."
+        footer={
+          <>
+            <Button type="submit" form="new-scan-code" size="sm" disabled={creating}>
+              {creating ? "Creating…" : "Create code"}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setFormOpen(false)}>
+              Cancel
+            </Button>
+          </>
+        }
+      >
+        <form id="new-scan-code" onSubmit={handleCreate} className="flex flex-col gap-4">
+          {feedback?.variant === "error" ? <Toast variant="error" message={feedback.message} /> : null}
+          <fieldset className="flex flex-col gap-2">
+            <legend className={`${CAPTION} mb-1.5 text-sm`}>Points at</legend>
+            <Segmented
+              ariaLabel="Code kind"
+              value={kind}
+              onChange={setKind}
+              options={[
+                { value: "product", label: "One product" },
+                { value: "group", label: "A shelf (group)" },
+              ]}
+            />
+          </fieldset>
+          {kind === "product" ? (
+            <label className={LABEL}>
+              <span className={CAPTION}>Product</span>
+              <select value={productId} onChange={(e) => setProductId(e.target.value)} className={FIELD}>
+                <option value="">Select a product…</option>
+                {activeProducts.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.tier})
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <label className={LABEL}>
+              <span className={CAPTION}>Location</span>
+              <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className={FIELD}>
+                <option value="">Select a location…</option>
+                {locations.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+              <span className={HELP}>Scanning it shows the member everything on that shelf to pick from.</span>
+            </label>
+          )}
+          <label className={LABEL}>
+            <span className={CAPTION}>Label text</span>
+            <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Optional" className={FIELD} />
+          </label>
+        </form>
+      </Drawer>
     </div>
   );
 }
