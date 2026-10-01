@@ -99,9 +99,10 @@ h3 {
   --color-status-critical: #d03b3b;
 }
 
-/* Keyboard focus is always visible; mouse focus isn't. */
+/* Keyboard focus is always visible; mouse focus isn't. Light neutral, not
+   brand red: red is the action accent, and a red ring reads as an error. */
 :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
-  outline: 2px solid #ef4444;
+  outline: 2px solid #d4d4d4;
   outline-offset: 2px;
   border-radius: 0.375rem;
 }

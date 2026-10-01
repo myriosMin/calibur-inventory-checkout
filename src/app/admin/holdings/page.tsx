@@ -223,7 +223,7 @@ function Holdings() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Product or holder…"
-              className="min-h-9 w-56 rounded-lg border border-neutral-800 bg-neutral-900/60 pl-9 pr-3 text-sm text-neutral-100 placeholder:text-neutral-600"
+              className="min-h-9 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 pl-9 pr-3 text-sm text-neutral-100 placeholder:text-neutral-600 sm:w-56"
             />
           </label>
           {totalNegatives > 0 ? (

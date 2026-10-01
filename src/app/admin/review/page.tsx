@@ -118,7 +118,7 @@ export default function AdminReviewPage() {
               value={filters.query}
               onChange={(e) => setFilters((f) => ({ ...f, query: e.target.value }))}
               placeholder="Search…"
-              className={`${FILTER} w-56 pl-9`}
+              className={`${FILTER} w-full pl-9 sm:w-56`}
             />
           </label>
           <FilterMenu activeCount={filters.entity !== "all" ? 1 : 0} onReset={() => setFilters((f) => ({ ...f, entity: "all" }))}>

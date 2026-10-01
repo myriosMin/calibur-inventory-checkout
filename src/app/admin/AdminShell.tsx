@@ -191,7 +191,11 @@ export default function AdminShell({ children }: { children: ReactNode }) {
           >
             <IconMenu size={20} />
           </button>
-          <span className="font-display text-lg font-semibold text-neutral-100">{current?.label ?? "Admin"}</span>
+          <span aria-hidden className="grid size-7 place-items-center rounded-md bg-red-600 font-display text-sm font-bold text-white">
+            C
+          </span>
+          <span className="font-display text-base font-semibold text-neutral-100">Calibur Store</span>
+          {current ? <span className="truncate text-sm text-neutral-500">/ {current.label}</span> : null}
         </header>
 
         <main id="admin-main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-8 md:py-8">

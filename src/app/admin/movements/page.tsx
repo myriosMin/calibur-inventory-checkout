@@ -1,14 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import useSWR from "swr";
 
+import ActionMenu from "@/components/admin/ActionMenu";
 import Card from "@/components/admin/Card";
+import Drawer from "@/components/admin/Drawer";
 import EmptyState from "@/components/admin/EmptyState";
+import FilterMenu from "@/components/admin/FilterMenu";
+import { CAPTION, FIELD, FILTER, HELP, LABEL } from "@/components/admin/form";
 import PageHeader from "@/components/admin/PageHeader";
+import Skeleton, { TableSkeleton } from "@/components/admin/Skeleton";
 import StatusPill from "@/components/admin/StatusPill";
+import { DailyStackedBar } from "@/components/admin/charts/lazy";
 import Button from "@/components/ui/Button";
 import Toast from "@/components/ui/Toast";
+import { revalidateStock, useHolders, useMembers, useProducts } from "@/lib/admin/queries";
+import { MOVEMENT_GROUP_SERIES, movementsPerDay, seriesPresent } from "@/lib/reports/chart-data";
 import { getBrowserClient } from "@/lib/supabase/browser";
+import { fetchAllRows } from "@/lib/supabase/fetch-all";
 import { createRequestSequencer } from "@/lib/utils/latest-request";
 
 import {
@@ -22,6 +32,8 @@ import {
 } from "./filters";
 
 const PAGE_SIZE = 50;
+/** Window for the activity chart above the ledger. */
+const CHART_DAYS = 30;
 
 /**
  * Verified against the live project before being written here (the `holders`
@@ -59,11 +71,6 @@ interface MovementRow {
   to_holder: { name: string; kind: string } | null;
 }
 
-interface OptionRow {
-  id: string;
-  name: string;
-}
-
 function actorLabel(row: MovementRow): string {
   if (!row.actor) return "—";
   return row.actor.display_name ?? row.actor.full_name;
@@ -87,7 +94,7 @@ function holderLabel(holder: { name: string; kind: string } | null): string {
  * through admin_reverse_movement, never by editing or deleting the original.
  */
 export default function AdminMovementsPage() {
-  const supabase = useMemo(() => getBrowserClient(), []);
+  const supabase = getBrowserClient();
 
   const [filters, setFilters] = useState<MovementFilters>(EMPTY_MOVEMENT_FILTERS);
   const [page, setPage] = useState(0);
@@ -98,9 +105,56 @@ export default function AdminMovementsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [products, setProducts] = useState<OptionRow[]>([]);
-  const [holders, setHolders] = useState<OptionRow[]>([]);
-  const [members, setMembers] = useState<OptionRow[]>([]);
+  // Filter option lists come from the shared cache instead of three more
+  // unpaged reads on every visit.
+  const productsQ = useProducts();
+  const holdersQ = useHolders();
+  const membersQ = useMembers();
+  const products = useMemo(
+    () => (productsQ.data ?? []).filter((p) => p.active).map((p) => ({ id: p.id, name: p.name })),
+    [productsQ.data],
+  );
+  const holders = useMemo(
+    () =>
+      [...(holdersQ.data ?? [])]
+        .sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name))
+        .map((h) => ({ id: h.id, name: `${h.name} (${h.kind})` })),
+    [holdersQ.data],
+  );
+  const members = useMemo(
+    () => (membersQ.data ?? []).map((m) => ({ id: m.id, name: m.display_name ?? m.full_name })),
+    [membersQ.data],
+  );
+
+  // The last 30 days, bucketed by kind: two narrow columns per row, paged.
+  const [chartSince] = useState(() => {
+    const at = new Date(Date.now() - CHART_DAYS * 86_400_000);
+    at.setMinutes(0, 0, 0);
+    return at.toISOString();
+  });
+  const activityQ = useSWR(["admin/movement-activity", chartSince], () =>
+    fetchAllRows((from, to) =>
+      supabase
+        .from("stock_movements")
+        .select("id, reason, created_at")
+        .gte("created_at", chartSince)
+        .order("id")
+        .range(from, to),
+    ),
+  );
+  const activity = useMemo(
+    () =>
+      movementsPerDay(
+        (activityQ.data ?? []).map((m) => ({ reason: m.reason ?? "correction", createdAt: m.created_at })),
+        { days: CHART_DAYS, now: new Date() },
+      ),
+    [activityQ.data],
+  );
+  const activitySeries = useMemo(() => {
+    const present = seriesPresent(activity, MOVEMENT_GROUP_SERIES);
+    return present.length > 0 ? present : MOVEMENT_GROUP_SERIES.slice(0, 2);
+  }, [activity]);
+  const activityTotal = activity.reduce((sum, point) => sum + point.total, 0);
 
   const [openReversalId, setOpenReversalId] = useState<number | null>(null);
   const [reversalNote, setReversalNote] = useState("");
@@ -195,40 +249,6 @@ export default function AdminMovementsPage() {
     setLoading(false);
   }, [filters, page, supabase]);
 
-  // Filter option lists. Mount-only: products, holders and members all change
-  // far more slowly than this page is refreshed.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const [productsRes, holdersRes, membersRes] = await Promise.all([
-        supabase
-          .from("products")
-          .select("id, name")
-          .eq("active", true)
-          .order("name"),
-        supabase.from("holders").select("id, name, kind").order("kind").order("name"),
-        supabase.from("members").select("id, full_name, display_name").order("full_name"),
-      ]);
-      if (cancelled) return;
-      setProducts(productsRes.data ?? []);
-      setHolders(
-        (holdersRes.data ?? []).map((h) => ({
-          id: h.id,
-          name: `${h.name} (${h.kind})`,
-        })),
-      );
-      setMembers(
-        (membersRes.data ?? []).map((m) => ({
-          id: m.id,
-          name: m.display_name ?? m.full_name,
-        })),
-      );
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [supabase]);
-
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -291,65 +311,75 @@ export default function AdminMovementsPage() {
       variant: "success",
       message: `Movement #${row.id} reversed. The original stays in the ledger; a mirror row now cancels it out.`,
     });
+    void revalidateStock();
+    void activityQ.mutate();
     await loadMovements();
   }
 
   const filtersActive = hasActiveFilters(filters);
+  const menuFilters = (filters.holderId ? 1 : 0) + (filters.memberId ? 1 : 0) + (filters.dateFrom || filters.dateTo ? 1 : 0);
+  const reversalRow = openReversalId !== null ? rows.find((row) => row.id === openReversalId) : undefined;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       <PageHeader
         title="Movements"
-        description="Every stock change ever recorded, newest first. The ledger is append-only: a mistake is corrected by writing its mirror, never by editing or deleting the original."
-        actions={
-          filtersActive ? (
-            <Button
-              variant="secondary"
-              className="min-h-0 px-2 py-1 text-xs"
-              onClick={() => {
-                setFilters(EMPTY_MOVEMENT_FILTERS);
-                setPage(0);
-              }}
-            >
-              Clear filters
-            </Button>
-          ) : null
-        }
+        description="Every stock change ever recorded, newest first."
+        info="The ledger is append-only: a mistake is corrected by writing its mirror (Reverse), never by editing or deleting the original."
       />
 
-      {feedback ? (
-        <Toast
-          variant={feedback.variant}
-          message={feedback.message}
-          onDismiss={() => setFeedback(null)}
-        />
-      ) : null}
+      {feedback ? <Toast variant={feedback.variant} message={feedback.message} onDismiss={() => setFeedback(null)} /> : null}
 
-      <Card title="Filters">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <label className="flex flex-col gap-1 text-sm text-neutral-200">
-            Product
-            <select
-              value={filters.productId}
-              onChange={(e) => updateFilter("productId", e.target.value)}
-              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
-            >
-              <option value="">Any product</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
+      <Card title="Activity" subtitle={`Movements per day by kind, last ${CHART_DAYS} days. Click a day to see it.`}>
+        {activityQ.isLoading ? (
+          <Skeleton className="h-[200px] w-full" />
+        ) : activityTotal === 0 ? (
+          <p className="py-8 text-center text-sm text-neutral-500">Nothing moved in the last {CHART_DAYS} days.</p>
+        ) : (
+          <DailyStackedBar
+            data={activity}
+            series={activitySeries}
+            unit="movements"
+            height={180}
+            onSelectDay={(date) => {
+              setFilters((prev) => ({ ...prev, dateFrom: date, dateTo: date }));
+              setPage(0);
+            }}
+          />
+        )}
+      </Card>
 
-          <label className="flex flex-col gap-1 text-sm text-neutral-200">
-            Holder (from or to)
-            <select
-              value={filters.holderId}
-              onChange={(e) => updateFilter("holderId", e.target.value)}
-              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
-            >
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          aria-label="Product"
+          value={filters.productId}
+          onChange={(e) => updateFilter("productId", e.target.value)}
+          className={`${FILTER} max-w-64`}
+        >
+          <option value="">Any product</option>
+          {products.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Reason"
+          value={filters.reason}
+          onChange={(e) => updateFilter("reason", e.target.value)}
+          className={FILTER}
+        >
+          <option value="">Any reason</option>
+          {MOVEMENT_REASONS.map((reason) => (
+            <option key={reason} value={reason}>
+              {reasonLabel(reason)}
+            </option>
+          ))}
+        </select>
+        <FilterMenu activeCount={menuFilters}>
+          <label className={LABEL}>
+            <span className={CAPTION}>Holder (from or to)</span>
+            <select value={filters.holderId} onChange={(e) => updateFilter("holderId", e.target.value)} className={FILTER}>
               <option value="">Any holder</option>
               {holders.map((h) => (
                 <option key={h.id} value={h.id}>
@@ -358,14 +388,9 @@ export default function AdminMovementsPage() {
               ))}
             </select>
           </label>
-
-          <label className="flex flex-col gap-1 text-sm text-neutral-200">
-            Member (who did it)
-            <select
-              value={filters.memberId}
-              onChange={(e) => updateFilter("memberId", e.target.value)}
-              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
-            >
+          <label className={LABEL}>
+            <span className={CAPTION}>Who did it</span>
+            <select value={filters.memberId} onChange={(e) => updateFilter("memberId", e.target.value)} className={FILTER}>
               <option value="">Anyone</option>
               {members.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -374,188 +399,85 @@ export default function AdminMovementsPage() {
               ))}
             </select>
           </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className={LABEL}>
+              <span className={CAPTION}>From</span>
+              <input type="date" value={filters.dateFrom} onChange={(e) => updateFilter("dateFrom", e.target.value)} className={FILTER} />
+            </label>
+            <label className={LABEL}>
+              <span className={CAPTION}>To</span>
+              <input type="date" value={filters.dateTo} onChange={(e) => updateFilter("dateTo", e.target.value)} className={FILTER} />
+            </label>
+          </div>
+          <p className={HELP}>Singapore days, both ends included.</p>
+        </FilterMenu>
+        {filtersActive ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setFilters(EMPTY_MOVEMENT_FILTERS);
+              setPage(0);
+            }}
+          >
+            Clear
+          </Button>
+        ) : null}
+        <span className="ml-auto text-sm tabular-nums text-neutral-500">
+          {loading ? "" : rows.length === 0 ? "" : `${page * PAGE_SIZE + 1}–${page * PAGE_SIZE + rows.length}`}
+        </span>
+      </div>
 
-          <label className="flex flex-col gap-1 text-sm text-neutral-200">
-            Reason
-            <select
-              value={filters.reason}
-              onChange={(e) => updateFilter("reason", e.target.value)}
-              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
-            >
-              <option value="">Any reason</option>
-              {MOVEMENT_REASONS.map((reason) => (
-                <option key={reason} value={reason}>
-                  {reasonLabel(reason)}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm text-neutral-200">
-            From date
-            <input
-              type="date"
-              value={filters.dateFrom}
-              onChange={(e) => updateFilter("dateFrom", e.target.value)}
-              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm text-neutral-200">
-            To date
-            <input
-              type="date"
-              value={filters.dateTo}
-              onChange={(e) => updateFilter("dateTo", e.target.value)}
-              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
-            />
-          </label>
-        </div>
-        <p className="mt-3 text-xs text-neutral-400">
-          Dates are Singapore days, inclusive of both ends.
-        </p>
-      </Card>
-
-      <Card
-        title="Ledger"
-        padded={false}
-        actions={
-          <span className="text-xs text-neutral-400">
-            {loading
-              ? "Loading…"
-              : rows.length === 0
-                ? "No rows"
-                : `Rows ${page * PAGE_SIZE + 1}–${page * PAGE_SIZE + rows.length}`}
-          </span>
-        }
-      >
-        {loading ? (
-          <p className="p-4 text-sm text-neutral-400">Loading…</p>
+      <Card padded={false}>
+        {loading && rows.length === 0 ? (
+          <TableSkeleton />
         ) : loadError ? (
           <p className="p-4 text-sm text-red-400">{loadError}</p>
         ) : rows.length === 0 ? (
-          <EmptyState
-            message={
-              filtersActive
-                ? "No movements match these filters."
-                : "No movements recorded yet."
-            }
-          />
+          <EmptyState message={filtersActive ? "No movements match these filters." : "No movements recorded yet."} />
         ) : (
-          <ul>
+          <ul className={loading ? "opacity-60 transition-opacity" : ""}>
             {rows.map((row) => {
               const reversed = reversedIds.has(row.id);
               const reversible = canReverse(row, reversedIds);
-              const isOpen = openReversalId === row.id;
               return (
-                <li
-                  key={row.id}
-                  className="border-b border-neutral-800 px-4 py-3 last:border-0"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0 text-sm">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium text-neutral-100">
-                          {row.products?.name ?? "(deleted product)"}
-                        </span>
-                        <span className="tabular-nums text-neutral-300">
-                          ×{row.qty}
-                          {row.products?.unit ? ` ${row.products.unit}` : ""}
-                        </span>
-                        <StatusPill
-                          tone={
-                            row.reason === "correction"
-                              ? "warning"
-                              : row.reason === "stocktake_loss"
-                                ? "danger"
-                                : "inactive"
-                          }
-                        >
-                          {reasonLabel(row.reason)}
-                        </StatusPill>
-                        {reversed ? (
-                          <StatusPill tone="warning">Reversed</StatusPill>
-                        ) : null}
-                      </div>
-                      <div className="mt-1 text-neutral-300">
-                        {holderLabel(row.from_holder)}{" "}
-                        <span className="text-neutral-500">→</span>{" "}
-                        {holderLabel(row.to_holder)}
-                      </div>
-                      <div className="mt-1 text-xs text-neutral-400">
-                        #{row.id} · {new Date(row.created_at).toLocaleString()} ·{" "}
-                        {actorLabel(row)}
-                        {row.entry_method ? ` · ${row.entry_method}` : ""}
-                        {row.scan_code ? ` · ${row.scan_code}` : ""}
-                        {row.reverses_movement_id
-                          ? ` · reverses #${row.reverses_movement_id}`
-                          : ""}
-                      </div>
+                <li key={row.id} className="flex items-start gap-3 border-b border-neutral-800/70 px-4 py-3 last:border-0">
+                  <div className="min-w-0 flex-1 text-sm">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-neutral-100">{row.products?.name ?? "(deleted product)"}</span>
+                      <span className="tabular-nums text-neutral-400">
+                        ×{row.qty}
+                        {row.products?.unit ? ` ${row.products.unit}` : ""}
+                      </span>
+                      <StatusPill
+                        tone={row.reason === "correction" ? "warning" : row.reason === "stocktake_loss" ? "danger" : "inactive"}
+                      >
+                        {reasonLabel(row.reason)}
+                      </StatusPill>
+                      {reversed ? <StatusPill tone="warning">reversed</StatusPill> : null}
                     </div>
-
-                    <div className="shrink-0">
-                      {reversible ? (
-                        isOpen ? (
-                          <Button
-                            variant="ghost"
-                            className="min-h-0 px-2 py-1 text-xs"
-                            onClick={() => setOpenReversalId(null)}
-                          >
-                            Cancel
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="danger"
-                            className="min-h-0 px-2 py-1 text-xs"
-                            onClick={() => openReversal(row.id)}
-                          >
-                            Reverse this
-                          </Button>
-                        )
-                      ) : (
-                        <span className="text-xs text-neutral-500">
-                          {row.reason === "correction"
-                            ? "Correction row"
-                            : "Already reversed"}
-                        </span>
-                      )}
-                    </div>
+                    <p className="mt-1 text-neutral-400">
+                      {holderLabel(row.from_holder)} <span className="text-neutral-600">→</span> {holderLabel(row.to_holder)}
+                    </p>
+                    <p className="mt-0.5 text-xs text-neutral-600">
+                      #{row.id} · {new Date(row.created_at).toLocaleString()} · {actorLabel(row)}
+                      {row.entry_method ? ` · ${row.entry_method}` : ""}
+                      {row.scan_code ? ` · ${row.scan_code}` : ""}
+                      {row.reverses_movement_id ? ` · reverses #${row.reverses_movement_id}` : ""}
+                    </p>
                   </div>
-
-                  {rowError[row.id] ? (
-                    <p className="mt-2 text-sm text-red-400">{rowError[row.id]}</p>
-                  ) : null}
-
-                  {isOpen ? (
-                    <div className="mt-3 border-t border-neutral-800 pt-3">
-                      <label className="flex flex-col gap-1 text-sm text-neutral-200">
-                        Why is this being reversed?
-                        <input
-                          type="text"
-                          autoFocus
-                          value={reversalNote}
-                          onChange={(e) => setReversalNote(e.target.value)}
-                          placeholder="e.g. scanned the wrong bin"
-                          className="min-h-11 w-full rounded-lg border border-neutral-700 px-3 text-base text-neutral-100"
-                        />
-                      </label>
-                      <p className="mt-2 text-xs text-neutral-400">
-                        This writes a new movement with the holders swapped and
-                        reason “correction”. Movement #{row.id} stays in the
-                        ledger exactly as it is.
-                      </p>
-                      <div className="mt-3">
-                        <Button
-                          variant="danger"
-                          disabled={reversingId === row.id}
-                          onClick={() => handleReverse(row)}
-                        >
-                          {reversingId === row.id
-                            ? "Reversing…"
-                            : "Write the correction"}
-                        </Button>
-                      </div>
-                    </div>
+                  {reversible ? (
+                    <ActionMenu
+                      ariaLabel={`Actions for movement ${row.id}`}
+                      items={[
+                        {
+                          label: "Reverse…",
+                          hint: "Write a mirror row that cancels this one",
+                          tone: "danger",
+                          onSelect: () => openReversal(row.id),
+                        },
+                      ]}
+                    />
                   ) : null}
                 </li>
               );
@@ -564,23 +486,61 @@ export default function AdminMovementsPage() {
         )}
       </Card>
 
-      <div className="flex items-center justify-between gap-3">
-        <Button
-          variant="secondary"
-          disabled={page === 0 || loading}
-          onClick={() => setPage((p) => Math.max(0, p - 1))}
-        >
-          Previous
-        </Button>
-        <span className="text-sm text-neutral-400">Page {page + 1}</span>
-        <Button
-          variant="secondary"
-          disabled={!hasNextPage || loading}
-          onClick={() => setPage((p) => p + 1)}
-        >
-          Next
-        </Button>
-      </div>
+      {page > 0 || hasNextPage ? (
+        <div className="flex items-center justify-between gap-3">
+          <Button variant="ghost" size="sm" disabled={page === 0 || loading} onClick={() => setPage((p) => Math.max(0, p - 1))}>
+            ← Newer
+          </Button>
+          <span className="text-sm text-neutral-500">Page {page + 1}</span>
+          <Button variant="ghost" size="sm" disabled={!hasNextPage || loading} onClick={() => setPage((p) => p + 1)}>
+            Older →
+          </Button>
+        </div>
+      ) : null}
+
+      <Drawer
+        open={reversalRow !== undefined}
+        onClose={() => setOpenReversalId(null)}
+        title={reversalRow ? `Reverse movement #${reversalRow.id}` : "Reverse movement"}
+        description={
+          reversalRow
+            ? `${reversalRow.products?.name ?? "Product"} ×${reversalRow.qty}: ${holderLabel(reversalRow.from_holder)} → ${holderLabel(reversalRow.to_holder)}`
+            : undefined
+        }
+        footer={
+          reversalRow ? (
+            <>
+              <Button variant="danger" size="sm" disabled={reversingId === reversalRow.id} onClick={() => handleReverse(reversalRow)}>
+                {reversingId === reversalRow.id ? "Reversing…" : "Write the correction"}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setOpenReversalId(null)}>
+                Cancel
+              </Button>
+            </>
+          ) : null
+        }
+      >
+        {reversalRow ? (
+          <div className="flex flex-col gap-4">
+            <label className={LABEL}>
+              <span className={CAPTION}>Why is this being reversed?</span>
+              <input
+                type="text"
+                value={reversalNote}
+                onChange={(e) => setReversalNote(e.target.value)}
+                placeholder="e.g. scanned the wrong bin"
+                className={FIELD}
+              />
+              <span className={HELP}>It goes into the ledger with the correction.</span>
+            </label>
+            {rowError[reversalRow.id] ? <p className="text-sm text-red-400">{rowError[reversalRow.id]}</p> : null}
+            <p className="text-sm text-neutral-400">
+              This writes a new movement with the holders swapped and reason &ldquo;correction&rdquo;. Movement #
+              {reversalRow.id} stays in the ledger exactly as it is.
+            </p>
+          </div>
+        ) : null}
+      </Drawer>
     </div>
   );
 }

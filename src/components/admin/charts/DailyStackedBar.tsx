@@ -13,6 +13,8 @@ export interface DailyStackedBarProps {
   /** "sessions", "movements": used in the tooltip total. */
   unit: string;
   height?: number;
+  /** Makes each day clickable (e.g. to filter a list to that day). */
+  onSelectDay?: (date: string) => void;
 }
 
 interface TooltipPayload {
@@ -66,7 +68,7 @@ function ChartTooltip({
  * kind on the ledger. Lazy-loaded (see ./lazy.tsx) so Recharts stays out of
  * every page that doesn't draw one.
  */
-export default function DailyStackedBar({ data, series, unit, height = 220 }: DailyStackedBarProps) {
+export default function DailyStackedBar({ data, series, unit, height = 220, onSelectDay }: DailyStackedBarProps) {
   const total = data.reduce((sum, point) => sum + point.total, 0);
   const lastIndex = series.length - 1;
 
@@ -110,6 +112,14 @@ export default function DailyStackedBar({ data, series, unit, height = 220 }: Da
                 radius={index === lastIndex ? [4, 4, 0, 0] : 0}
                 maxBarSize={28}
                 isAnimationActive={false}
+                cursor={onSelectDay ? "pointer" : undefined}
+                onClick={
+                  onSelectDay
+                    ? (entry: { payload?: DailyPoint }) => {
+                        if (entry.payload?.date) onSelectDay(entry.payload.date);
+                      }
+                    : undefined
+                }
               />
             ))}
           </BarChart>

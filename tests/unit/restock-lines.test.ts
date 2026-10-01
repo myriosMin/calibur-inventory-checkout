@@ -13,6 +13,7 @@ import {
   PRODUCT_SEARCH_COLUMNS,
   buildProductSearchFilter,
   escapeLikePattern,
+  matchProducts,
   quoteOrFilterValue,
 } from "@/app/admin/restock/product-search";
 
@@ -174,5 +175,28 @@ describe("buildProductSearchFilter", () => {
       "part_number",
       "category",
     ]);
+  });
+});
+
+describe("matchProducts (cached restock search)", () => {
+  const products = [
+    { name: "XT30 connector", part_number: "XT30-M", category: "Connectors", active: true },
+    { name: "DJI M3508 motor", part_number: "M3508", category: "Motors", active: true },
+    { name: "Old XT30 lead", part_number: null, category: "Cables", active: false },
+    { name: "Power cable", part_number: "PC-XT30", category: "Cables", active: true },
+  ];
+
+  it("matches name, part number and category, name hits first", () => {
+    expect(matchProducts(products, "xt30", 10).map((p) => p.name)).toEqual(["XT30 connector", "Power cable"]);
+  });
+
+  it("skips inactive products and empty queries", () => {
+    expect(matchProducts(products, "old", 10)).toEqual([]);
+    expect(matchProducts(products, "   ", 10)).toEqual([]);
+  });
+
+  it("treats wildcards and commas as plain text", () => {
+    expect(matchProducts(products, "%", 10)).toEqual([]);
+    expect(matchProducts(products, "motor", 1).map((p) => p.name)).toEqual(["DJI M3508 motor"]);
   });
 });

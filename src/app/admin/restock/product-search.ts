@@ -40,3 +40,25 @@ export function buildProductSearchFilter(rawQuery: string): string {
     ",",
   );
 }
+
+/**
+ * The same search, run over the products list the admin already has cached
+ * (src/lib/admin/queries.ts): active products whose name, part number or
+ * category contains the query, case-insensitively, name matches first.
+ * No request per keystroke, and no escaping to get wrong, because nothing is
+ * sent to PostgREST.
+ */
+export function matchProducts<
+  T extends { name: string; part_number: string | null; category: string | null; active: boolean },
+>(products: readonly T[], rawQuery: string, limit: number): T[] {
+  const needle = rawQuery.trim().toLowerCase();
+  if (!needle) return [];
+  const rank = (product: T): number => {
+    const index = PRODUCT_SEARCH_COLUMNS.findIndex((column) => product[column]?.toLowerCase().includes(needle));
+    return index === -1 ? Infinity : index;
+  };
+  return products
+    .filter((product) => product.active && rank(product) !== Infinity)
+    .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))
+    .slice(0, limit);
+}

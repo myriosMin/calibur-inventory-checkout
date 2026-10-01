@@ -1,23 +1,22 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import Card from "@/components/admin/Card";
 import DataTable, { type Column } from "@/components/admin/DataTable";
 import PageHeader from "@/components/admin/PageHeader";
+import Segmented from "@/components/admin/Segmented";
+import Skeleton from "@/components/admin/Skeleton";
+import StatCard from "@/components/admin/StatCard";
 import StatusPill from "@/components/admin/StatusPill";
-import { getBrowserClient } from "@/lib/supabase/browser";
+import DivergingBarList from "@/components/admin/charts/DivergingBarList";
+import { toStockCountRows, useLocations, useProducts, useStockCounts } from "@/lib/admin/queries";
 
 import { formatVariance } from "../walk";
 import {
   summariseByLocation,
   summariseByProduct,
-  type LocationRef,
-  type LocationVariance,
-  type ProductRef,
   type ProductVariance,
-  type StockCountRow,
 } from "../variance";
 
 // ---------------------------------------------------------------------------
@@ -33,9 +32,6 @@ import {
 // the strongest thing a count is entitled to say.
 // ---------------------------------------------------------------------------
 
-/** Plenty for a club counting one shelf a month for years. */
-const ROW_LIMIT = 1000;
-
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
   const date = new Date(iso);
@@ -48,78 +44,19 @@ function formatDate(iso: string | null): string {
 }
 
 export default function AdminStocktakeVariancePage() {
-  const [counts, setCounts] = useState<StockCountRow[]>([]);
-  const [products, setProducts] = useState<ProductRef[]>([]);
-  const [locations, setLocations] = useState<LocationRef[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [onlyVariance, setOnlyVariance] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      setLoading(true);
-      setLoadError(null);
-      const supabase = getBrowserClient();
-
-      // Three flat reads joined client-side rather than one PostgREST embed:
-      // stock_counts.product_id resolves to both `products` and the
-      // `stock_summary` view, so an embed has to be disambiguated by FK
-      // name, and the summariser is easier to test against plain rows.
-      const [countsRes, productsRes, locationsRes] = await Promise.all([
-        supabase
-          .from("stock_counts")
-          .select("id, product_id, counted_qty, expected_qty, created_at, movement_id, session_id")
-          .order("created_at", { ascending: false })
-          .limit(ROW_LIMIT),
-        supabase.from("products").select("id, name, location_id"),
-        supabase.from("locations").select("id, name"),
-      ]);
-
-      if (cancelled) return;
-
-      if (countsRes.error) setLoadError(countsRes.error.message);
-      else {
-        setCounts(
-          (countsRes.data ?? []).map((row) => ({
-            id: row.id,
-            productId: row.product_id,
-            countedQty: row.counted_qty,
-            expectedQty: row.expected_qty,
-            createdAt: row.created_at,
-            movementId: row.movement_id,
-            sessionId: row.session_id,
-          })),
-        );
-      }
-
-      if (productsRes.error) {
-        setLoadError((prev) => prev ?? productsRes.error!.message);
-      } else {
-        setProducts(
-          (productsRes.data ?? []).map((row) => ({
-            id: row.id,
-            name: row.name,
-            locationId: row.location_id,
-          })),
-        );
-      }
-
-      if (locationsRes.error) {
-        setLoadError((prev) => prev ?? locationsRes.error!.message);
-      } else {
-        setLocations(locationsRes.data ?? []);
-      }
-
-      setLoading(false);
-    };
-
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // Shared, paged reads: stock_counts used to stop at a hard 1000 rows here.
+  const countsQ = useStockCounts();
+  const productsQ = useProducts();
+  const locationsQ = useLocations();
+  const counts = useMemo(() => toStockCountRows(countsQ.data ?? []), [countsQ.data]);
+  const products = useMemo(
+    () => (productsQ.data ?? []).map((row) => ({ id: row.id, name: row.name, locationId: row.location_id })),
+    [productsQ.data],
+  );
+  const locations = useMemo(() => locationsQ.data ?? [], [locationsQ.data]);
+  const loading = countsQ.isLoading || productsQ.isLoading || locationsQ.isLoading;
+  const loadError = ((countsQ.error ?? productsQ.error ?? locationsQ.error) as Error | undefined)?.message ?? null;
+  const [onlyVariance, setOnlyVariance] = useState(true);
 
   const byProduct = useMemo(
     () => summariseByProduct(counts, products, locations),
@@ -133,52 +70,6 @@ export default function AdminStocktakeVariancePage() {
   );
 
   const productsOff = byProduct.filter((p) => p.absVariance !== 0).length;
-
-  const locationColumns: Column<LocationVariance>[] = [
-    {
-      key: "location",
-      header: "Location",
-      render: (row) => (
-        <span className="text-neutral-100">{row.locationName}</span>
-      ),
-    },
-    {
-      key: "counted",
-      header: "Products counted",
-      className: "text-right tabular-nums",
-      render: (row) => row.productsCounted,
-    },
-    {
-      key: "off",
-      header: "Off at last count",
-      className: "text-right tabular-nums",
-      render: (row) =>
-        row.productsWithVariance === 0 ? (
-          <span className="text-neutral-400">none</span>
-        ) : (
-          <StatusPill tone="warning">
-            {row.productsWithVariance} of {row.productsCounted}
-          </StatusPill>
-        ),
-    },
-    {
-      key: "net",
-      header: "Net",
-      className: "text-right tabular-nums",
-      render: (row) => formatVariance(row.netVariance),
-    },
-    {
-      key: "abs",
-      header: "Total swing",
-      className: "text-right tabular-nums",
-      render: (row) => row.absVariance,
-    },
-    {
-      key: "last",
-      header: "Last counted",
-      render: (row) => formatDate(row.lastCountedAt),
-    },
-  ];
 
   const productColumns: Column<ProductVariance>[] = [
     {
@@ -228,78 +119,83 @@ export default function AdminStocktakeVariancePage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Stocktake variance"
+        title="Variance"
         description="What the shelves held versus what the ledger thought, from every committed count."
-        actions={
-          <Link
-            href="/admin/stocktake"
-            className="inline-flex min-h-11 items-center rounded-lg bg-neutral-800 px-4 text-sm font-medium uppercase tracking-wide text-neutral-100 hover:bg-neutral-700"
-          >
-            Count a shelf
-          </Link>
+        info={
+          <>
+            <p>
+              <strong className="text-neutral-100">Variance is a diagnostic, not an accusation.</strong> A part that
+              is off every time it is counted is a part people aren&apos;t logging, which means the flow for it is too
+              slow.
+            </p>
+            <p>
+              Fix the flow: a clearer label, a group code for the whole drawer, a lower-friction path in the Mini App.
+              This is an honour system, and these numbers are about the system, not about anyone using it.
+            </p>
+          </>
         }
       />
 
-      <Card>
-        <p className="text-sm text-neutral-300">
-          <strong className="text-neutral-100">
-            Variance is a diagnostic, not an accusation.
-          </strong>{" "}
-          A part that is off every time it is counted is a part people
-          aren&apos;t logging — which means the flow for it is too slow. Fix the
-          flow: a clearer label, a group code for the whole drawer, a lower
-          friction path in the Mini App. This is an honour system, and the
-          numbers below are about the system, not about anyone using it.
-        </p>
-        {!loading && !loadError ? (
-          <p className="mt-3 text-sm text-neutral-400">
-            {byProduct.length} product{byProduct.length === 1 ? "" : "s"}{" "}
-            counted across {byLocation.length} location
-            {byLocation.length === 1 ? "" : "s"}. {productsOff} drifted at the
-            last count.
-          </p>
-        ) : null}
-      </Card>
-
-      <Card title="By location" padded={false}>
-        <DataTable
-          columns={locationColumns}
-          rows={byLocation}
-          rowKey={(row) => row.locationId ?? "unassigned"}
+      <div className="grid grid-cols-3 gap-3">
+        <StatCard label="Products counted" value={byProduct.length} loading={loading} />
+        <StatCard
+          label="Drifted at last count"
+          value={productsOff}
+          tone={productsOff > 0 ? "warning" : undefined}
           loading={loading}
-          error={loadError}
-          emptyMessage="No counts committed yet. Walk a shelf and the variance shows up here."
         />
-      </Card>
+        <StatCard label="Locations counted" value={byLocation.length} loading={loading} />
+      </div>
 
-      <Card
-        title="By product"
-        padded={false}
-        actions={
-          <label className="flex items-center gap-2 text-xs text-neutral-400">
-            <input
-              type="checkbox"
-              checked={onlyVariance}
-              onChange={(e) => setOnlyVariance(e.target.checked)}
-              className="h-4 w-4"
+      <div className="grid items-start gap-6 lg:grid-cols-5">
+        <Card title="By location" subtitle="Net drift at the last count" className="lg:col-span-2">
+          {loading ? (
+            <Skeleton className="h-32 w-full" />
+          ) : byLocation.length === 0 ? (
+            <p className="text-sm text-neutral-500">No counts committed yet. Walk a shelf and it shows up here.</p>
+          ) : (
+            <DivergingBarList
+              items={byLocation.map((row) => ({
+                key: row.locationId ?? "unassigned",
+                label: row.locationName,
+                value: row.netVariance,
+                display: formatVariance(row.netVariance),
+              }))}
             />
-            Only products that have drifted
-          </label>
-        }
-      >
-        <DataTable
-          columns={productColumns}
-          rows={visibleProducts}
-          rowKey={(row) => row.productId}
-          loading={loading}
-          error={loadError}
-          emptyMessage={
-            onlyVariance
-              ? "Nothing has drifted — every counted product matched the ledger."
-              : "No counts committed yet. Walk a shelf and the variance shows up here."
+          )}
+        </Card>
+
+        <Card
+          title="By product"
+          padded={false}
+          className="lg:col-span-3"
+          actions={
+            <Segmented
+              ariaLabel="Products shown"
+              value={onlyVariance ? "drifted" : "all"}
+              onChange={(value) => setOnlyVariance(value === "drifted")}
+              options={[
+                { value: "drifted", label: "Drifted", count: productsOff },
+                { value: "all", label: "All", count: byProduct.length },
+              ]}
+            />
           }
-        />
-      </Card>
+        >
+          <DataTable
+            columns={productColumns}
+            rows={visibleProducts}
+            rowKey={(row) => row.productId}
+            rowHref={(row) => `/admin/products/${row.productId}`}
+            loading={loading}
+            error={loadError}
+            emptyMessage={
+              onlyVariance
+                ? "Nothing has drifted: every counted product matched the ledger."
+                : "No counts committed yet. Walk a shelf and the variance shows up here."
+            }
+          />
+        </Card>
+      </div>
     </div>
   );
 }

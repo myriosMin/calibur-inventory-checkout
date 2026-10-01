@@ -249,7 +249,7 @@ export default function AdminMembersPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Name, email or handle…"
-            className={`${FILTER} w-64 pl-9`}
+            className={`${FILTER} w-full pl-9 sm:w-64`}
           />
         </label>
       </div>

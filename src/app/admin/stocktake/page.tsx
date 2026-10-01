@@ -6,11 +6,13 @@ import { useEffect, useMemo, useState } from "react";
 import Card from "@/components/admin/Card";
 import EmptyState from "@/components/admin/EmptyState";
 import PageHeader from "@/components/admin/PageHeader";
+import { TableSkeleton } from "@/components/admin/Skeleton";
 import StatusPill from "@/components/admin/StatusPill";
 import Button from "@/components/ui/Button";
 import Sheet from "@/components/ui/Sheet";
 import Toast from "@/components/ui/Toast";
 import { IconChevronRight, IconCheck } from "@/components/ui/icons";
+import { revalidateStock } from "@/lib/admin/queries";
 import { getBrowserClient } from "@/lib/supabase/browser";
 import { fetchAllRows } from "@/lib/supabase/fetch-all";
 
@@ -413,22 +415,19 @@ export default function AdminStocktakePage() {
       });
     }
     // Expected quantities have just moved; reload so a second walk of the
-    // same shelf doesn't show pre-correction numbers.
+    // same shelf doesn't show pre-correction numbers, and tell every other
+    // page's cache (holdings, dashboard, variance) the same.
+    void revalidateStock();
     await loadData();
   }
 
+  // The variance report is the "Variance" tab above (AdminShell), so the
+  // header carries no link of its own.
   const header = (
     <PageHeader
       title="Stocktake"
-      description="Count one shelf, or one robot, at a time. Committing writes the correction for you; nobody edits numbers by hand."
-      actions={
-        <Link
-          href="/admin/stocktake/variance"
-          className="inline-flex min-h-11 items-center rounded-lg bg-neutral-800 px-4 text-sm font-medium uppercase tracking-wide text-neutral-100 hover:bg-neutral-700"
-        >
-          Variance report
-        </Link>
-      }
+      description="Count one shelf, or one robot, at a time."
+      info="Committing writes the correction for you; nobody edits numbers by hand. The expected figures shown are a reference only: the database recomputes them from the ledger at commit time."
     />
   );
 
@@ -473,9 +472,9 @@ export default function AdminStocktakePage() {
             <Button onClick={() => setReceipt(null)}>Count something else</Button>
             <Link
               href="/admin/stocktake/variance"
-              className="inline-flex min-h-11 items-center rounded-lg bg-neutral-800 px-4 text-sm font-medium uppercase tracking-wide text-neutral-100 hover:bg-neutral-700"
+              className="inline-flex min-h-11 items-center rounded-lg px-4 text-sm font-medium text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100"
             >
-              Variance report
+              Variance report →
             </Link>
           </div>
         </Card>
@@ -491,9 +490,10 @@ export default function AdminStocktakePage() {
         {feedback ? (
           <Toast variant={feedback.variant} message={feedback.message} onDismiss={() => setFeedback(null)} />
         ) : null}
+        <div className="grid items-start gap-6 lg:grid-cols-2">
         <Card title="Count a store shelf" padded={false}>
           {loading ? (
-            <p className="p-4 text-sm text-neutral-400">Loading…</p>
+            <TableSkeleton rows={5} />
           ) : loadError ? (
             <p className="p-4 text-sm text-red-400">{loadError}</p>
           ) : locationOptions.length === 0 ? (
@@ -505,7 +505,7 @@ export default function AdminStocktakePage() {
                   <button
                     type="button"
                     onClick={() => startWalk(option)}
-                    className="flex min-h-tap w-full items-center gap-3 px-4 py-3 text-left hover:bg-neutral-800"
+                    className="flex min-h-tap w-full items-center gap-3 px-4 py-3 text-left hover:bg-neutral-800/50"
                   >
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-base font-medium text-neutral-100">{option.name}</span>
@@ -523,7 +523,7 @@ export default function AdminStocktakePage() {
 
         <Card title="Count a robot" padded={false}>
           {loading ? (
-            <p className="p-4 text-sm text-neutral-400">Loading…</p>
+            <TableSkeleton rows={5} />
           ) : loadError ? null : robotOptions.length === 0 ? (
             <EmptyState message="No robots yet." />
           ) : (
@@ -533,7 +533,7 @@ export default function AdminStocktakePage() {
                   <button
                     type="button"
                     onClick={() => startRobotWalk(robot)}
-                    className="flex min-h-tap w-full items-center gap-3 px-4 py-3 text-left hover:bg-neutral-800"
+                    className="flex min-h-tap w-full items-center gap-3 px-4 py-3 text-left hover:bg-neutral-800/50"
                   >
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-base font-medium text-neutral-100">{robot.name}</span>
@@ -550,6 +550,7 @@ export default function AdminStocktakePage() {
             </ul>
           )}
         </Card>
+        </div>
       </div>
     );
   }
@@ -583,7 +584,7 @@ export default function AdminStocktakePage() {
               {entered} of {walkProducts.length} entered · blanks are skipped, not counted as zero
             </p>
           </div>
-          <Button variant="ghost" onClick={discardWalk} className="min-h-0 px-2 py-1 text-xs">
+          <Button variant="ghost" size="sm" onClick={discardWalk}>
             Discard count
           </Button>
         </div>
@@ -595,7 +596,7 @@ export default function AdminStocktakePage() {
               onChange={(e) => setAddName(e.target.value)}
               list="stocktake-products"
               placeholder="Something on the robot that isn't listed? Add it…"
-              className="min-h-tap min-w-0 flex-1 rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-base text-neutral-100 placeholder:text-neutral-500"
+              className="min-h-tap min-w-0 flex-1 rounded-lg border border-neutral-800 bg-neutral-950 px-3 text-base text-neutral-100 placeholder:text-neutral-500"
             />
             <datalist id="stocktake-products">
               {catalog.map((p) => (
@@ -615,13 +616,13 @@ export default function AdminStocktakePage() {
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder={isRobotWalk ? "Filter this robot…" : "Filter this shelf…"}
-              className="min-h-tap w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-base text-neutral-100 placeholder:text-neutral-500"
+              className="min-h-tap w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 text-base text-neutral-100 placeholder:text-neutral-500"
             />
           </div>
         ) : null}
 
         {loading ? (
-          <p className="p-4 text-sm text-neutral-400">Loading…</p>
+          <TableSkeleton rows={5} />
         ) : visibleProducts.length === 0 ? (
           <EmptyState
             message={
@@ -669,7 +670,7 @@ export default function AdminStocktakePage() {
                     onChange={(e) => handleCountChange(product.id, e.target.value)}
                     aria-label={`Counted quantity for ${product.name}`}
                     placeholder="—"
-                    className="min-h-tap w-20 shrink-0 rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-right text-base tabular-nums text-neutral-100 placeholder:text-neutral-600"
+                    className="min-h-tap w-20 shrink-0 rounded-lg border border-neutral-800 bg-neutral-950 px-3 text-right text-base tabular-nums text-neutral-100 placeholder:text-neutral-600"
                   />
                 </li>
               );
@@ -685,7 +686,7 @@ export default function AdminStocktakePage() {
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="e.g. counted with Wei Ming, bottom drawer was open"
-          className="min-h-tap rounded-lg border border-neutral-700 bg-neutral-900 px-3 text-base text-neutral-100 placeholder:text-neutral-500"
+          className="min-h-tap rounded-lg border border-neutral-800 bg-neutral-950 px-3 text-base text-neutral-100 placeholder:text-neutral-500"
         />
       </label>
 

@@ -237,7 +237,7 @@ function Products() {
               value={filters.query}
               onChange={(e) => setFilters((f) => ({ ...f, query: e.target.value }))}
               placeholder="Name, part number, supplier…"
-              className={`${FILTER} w-64 pl-9`}
+              className={`${FILTER} w-full pl-9 sm:w-64`}
             />
           </label>
           <FilterMenu

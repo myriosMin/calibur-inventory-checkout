@@ -320,7 +320,7 @@ export default function AdminScanCodesPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Code, product or shelf…"
-            className={`${FILTER} w-64 pl-9`}
+            className={`${FILTER} w-full pl-9 sm:w-64`}
           />
         </label>
       </div>

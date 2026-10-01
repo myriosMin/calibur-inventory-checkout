@@ -477,7 +477,7 @@ export default function LabelsClient() {
           <input
             id="label-search"
             type="search"
-            className={`${INPUT_CLASS} w-52 pl-9`}
+            className={`${INPUT_CLASS} w-full pl-9 sm:w-52`}
             value={search}
             placeholder="Name or code"
             onChange={(e) => setSearch(e.target.value)}

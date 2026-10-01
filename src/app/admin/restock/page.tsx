@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import Card from "@/components/admin/Card";
 import EmptyState from "@/components/admin/EmptyState";
@@ -9,7 +9,9 @@ import PageHeader from "@/components/admin/PageHeader";
 import Button from "@/components/ui/Button";
 import Stepper from "@/components/ui/Stepper";
 import Toast from "@/components/ui/Toast";
-import { IconPlus, IconX } from "@/components/ui/icons";
+import { IconPlus, IconSearch, IconX } from "@/components/ui/icons";
+import { FIELD, FIELD_AREA } from "@/components/admin/form";
+import { revalidateStock, useProducts } from "@/lib/admin/queries";
 import { getBrowserClient } from "@/lib/supabase/browser";
 import type { Database } from "@/lib/types/database";
 
@@ -22,7 +24,7 @@ import {
   validateRestockLines,
   type RestockLine,
 } from "./lines";
-import { buildProductSearchFilter } from "./product-search";
+import { matchProducts } from "./product-search";
 
 type ProductSearchRow = Pick<
   Database["public"]["Tables"]["products"]["Row"],
@@ -52,12 +54,9 @@ const SEARCH_LIMIT = 20;
  * key.
  */
 export default function AdminRestockPage() {
-  const supabase = useMemo(() => getBrowserClient(), []);
+  const supabase = getBrowserClient();
 
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<ProductSearchRow[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
 
   const [lines, setLines] = useState<RestockLine[]>([]);
   const [note, setNote] = useState("");
@@ -82,50 +81,15 @@ export default function AdminRestockPage() {
    */
   const clientTokenRef = useRef<string | null>(null);
 
-  // Debounced product search. Same shape as the member picker in
-  // /admin/bind-queue: 200ms timer, `cancelled` guard so a slow response for
-  // an old query cannot overwrite a fast one for a newer query.
-  useEffect(() => {
-    const trimmed = query.trim();
-    let cancelled = false;
-
-    async function search() {
-      // Every state update lives inside this deferred callback, never in the
-      // effect body -- a synchronous setState there triggers the cascading
-      // render that react-hooks/set-state-in-effect flags.
-      if (trimmed.length === 0) {
-        setResults([]);
-        setSearchError(null);
-        setSearching(false);
-        return;
-      }
-
-      setSearching(true);
-      setSearchError(null);
-      const { data, error } = await supabase
-        .from("products")
-        .select("id, name, unit, tier, part_number, category")
-        .eq("active", true)
-        .or(buildProductSearchFilter(trimmed))
-        .order("name", { ascending: true })
-        .limit(SEARCH_LIMIT);
-
-      if (cancelled) return;
-      if (error) {
-        setSearchError(error.message);
-        setResults([]);
-      } else {
-        setResults(data ?? []);
-      }
-      setSearching(false);
-    }
-
-    const timeout = setTimeout(search, 200);
-    return () => {
-      cancelled = true;
-      clearTimeout(timeout);
-    };
-  }, [query, supabase]);
+  // Search the cached catalog locally: instant, and no request per
+  // keystroke (it used to be a debounced ilike query each time).
+  const productsQ = useProducts();
+  const results: ProductSearchRow[] = useMemo(
+    () => matchProducts(productsQ.data ?? [], query, SEARCH_LIMIT),
+    [productsQ.data, query],
+  );
+  const searching = productsQ.isLoading && query.trim().length > 0;
+  const searchError = (productsQ.error as Error | undefined)?.message ?? null;
 
   function handleAdd(product: ProductSearchRow) {
     setLines((prev) => addLine(prev, product));
@@ -133,7 +97,6 @@ export default function AdminRestockPage() {
     // Clear the box but keep focus: the next part is already in the admin's
     // other hand.
     setQuery("");
-    setResults([]);
     searchInputRef.current?.focus();
   }
 
@@ -192,6 +155,7 @@ export default function AdminRestockPage() {
     });
     setLines([]);
     setNote("");
+    void revalidateStock();
     searchInputRef.current?.focus();
   }
 
@@ -201,214 +165,166 @@ export default function AdminRestockPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Restock"
-        description="Record newly received stock into the store. Each line writes one adjustment → store movement; the whole delivery commits as a single ledger session."
+        description="Record a delivery into the store."
+        info="Each line writes one adjustment → store movement; the whole delivery commits as a single ledger session. Search, press Enter to add the top match, and keep typing."
       />
 
-      {feedback ? (
-        <Toast
-          variant={feedback.variant}
-          message={feedback.message}
-          onDismiss={() => setFeedback(null)}
-        />
-      ) : null}
+      {feedback ? <Toast variant={feedback.variant} message={feedback.message} onDismiss={() => setFeedback(null)} /> : null}
 
       {lastCommit ? (
-        <Card title="Last recorded">
-          <p className="text-sm text-neutral-100">{lastCommit.summary}</p>
-          <p className="mt-1 text-xs text-neutral-400">
-            {lastCommit.at} · session{" "}
-            <code className="rounded bg-neutral-800 px-1 py-0.5">
-              {lastCommit.sessionId.slice(0, 8)}
-            </code>
-          </p>
-          <p className="mt-3 text-sm">
-            <Link
-              href="/admin/movements"
-              className="font-medium text-red-400 hover:text-red-300"
-            >
-              View it in the ledger
-            </Link>
-          </p>
-        </Card>
+        <p className="text-sm text-neutral-400">
+          Last recorded: <span className="text-neutral-200">{lastCommit.summary}</span> · {lastCommit.at} ·{" "}
+          <Link href="/admin/movements" className="text-neutral-300 underline-offset-4 hover:text-neutral-100 hover:underline">
+            view in the ledger
+          </Link>
+        </p>
       ) : null}
 
-      <Card title="Find products">
-        <form onSubmit={handleSearchSubmit}>
-          <input
-            ref={searchInputRef}
-            type="search"
-            autoFocus
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by name, part number, or category…"
-            aria-label="Search products"
-            className="min-h-11 w-full rounded-lg border border-neutral-700 px-3 text-base text-neutral-100"
-          />
-        </form>
-
-        {searchError ? (
-          <p className="mt-3 text-sm text-red-400">{searchError}</p>
-        ) : null}
-
-        {query.trim().length === 0 ? (
-          <p className="mt-3 text-sm text-neutral-400">
-            Type to search the catalog. Press Enter to add the top match, then
-            keep typing — you can record several products in one go.
-          </p>
-        ) : searching ? (
-          <p className="mt-3 text-sm text-neutral-400">Searching…</p>
-        ) : results.length === 0 ? (
-          <p className="mt-3 text-sm text-neutral-400">
-            No active products match “{query.trim()}”.{" "}
-            <Link
-              href="/admin/products"
-              className="font-medium text-red-400 hover:text-red-300"
-            >
-              Create it first
-            </Link>
-            , then come back.
-          </p>
-        ) : (
-          <ul className="mt-3 flex flex-col gap-1">
-            {results.map((product) => (
-              <li
-                key={product.id}
-                className="flex items-center justify-between gap-3 rounded-lg px-2 py-2 hover:bg-neutral-800"
-              >
-                <div className="min-w-0 text-sm">
-                  <div className="truncate text-neutral-100">{product.name}</div>
-                  <div className="truncate text-xs text-neutral-400">
-                    {product.tier}
-                    {product.part_number ? ` · ${product.part_number}` : ""}
-                    {product.category ? ` · ${product.category}` : ""}
-                  </div>
-                </div>
-                <Button
-                  variant="secondary"
-                  onClick={() => handleAdd(product)}
-                  className="min-h-0 shrink-0 px-2 py-1 text-xs"
-                >
-                  <IconPlus size={14} className="mr-1" />
-                  Add
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-
-      <form onSubmit={handleCommit}>
-        <Card
-          title="Delivery"
-          actions={
-            lines.length > 0 ? (
-              <span className="text-xs text-neutral-400">
-                {describeRestock(lines)}
-              </span>
-            ) : null
-          }
-        >
-          {lines.length === 0 ? (
-            <EmptyState
-              className="p-0"
-              message="Nothing added yet. Search above and add the products you received."
+      <div className="grid items-start gap-6 lg:grid-cols-5">
+        <Card title="Find products" className="lg:col-span-3">
+          <form onSubmit={handleSearchSubmit} className="relative">
+            <IconSearch size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+            <input
+              ref={searchInputRef}
+              type="search"
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Name, part number or category…"
+              aria-label="Search products"
+              className={`${FIELD} pl-9`}
             />
+          </form>
+
+          {searchError ? <p className="mt-3 text-sm text-red-400">{searchError}</p> : null}
+
+          {query.trim().length === 0 ? (
+            <p className="mt-3 text-sm text-neutral-500">Type to search. Enter adds the top match.</p>
+          ) : searching ? (
+            <p className="mt-3 text-sm text-neutral-500">Loading the catalog…</p>
+          ) : results.length === 0 ? (
+            <p className="mt-3 text-sm text-neutral-500">
+              No active products match &ldquo;{query.trim()}&rdquo;.{" "}
+              <Link href="/admin/products" className="text-neutral-300 hover:text-neutral-100">
+                Create it first
+              </Link>
+              , then come back.
+            </p>
           ) : (
-            <ul className="flex flex-col gap-2">
-              {lines.map((line) => (
-                <li
-                  key={line.productId}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-neutral-800 px-3 py-2"
-                >
-                  <div className="min-w-0 text-sm">
-                    <div className="truncate text-neutral-100">{line.name}</div>
-                    <div className="text-xs text-neutral-400">{line.unit}</div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Stepper
-                      label={line.name}
-                      value={line.qty}
-                      min={1}
-                      onChange={(qty) =>
-                        setLines((prev) => setLineQty(prev, line.productId, qty))
-                      }
-                      disabled={submitting}
-                    />
-                    <input
-                      type="number"
-                      min={1}
-                      step={1}
-                      value={line.qty}
-                      aria-label={`${line.name} quantity`}
-                      disabled={submitting}
-                      onChange={(e) =>
-                        setLines((prev) =>
-                          setLineQty(
-                            prev,
-                            line.productId,
-                            Number.parseInt(e.target.value, 10) || 0,
-                          ),
-                        )
-                      }
-                      className="min-h-11 w-20 rounded-lg border border-neutral-700 px-2 text-base text-neutral-100"
-                    />
-                    <button
-                      type="button"
-                      aria-label={`Remove ${line.name}`}
-                      disabled={submitting}
-                      onClick={() =>
-                        setLines((prev) => removeLine(prev, line.productId))
-                      }
-                      className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100 disabled:opacity-40"
-                    >
-                      <IconX size={16} />
-                    </button>
-                  </div>
+            <ul className="mt-2 flex flex-col">
+              {results.map((product, index) => (
+                <li key={product.id}>
+                  <button
+                    type="button"
+                    onClick={() => handleAdd(product)}
+                    className={`group flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-neutral-800 ${
+                      index === 0 ? "bg-neutral-800/40" : ""
+                    }`}
+                  >
+                    <span className="min-w-0 text-sm">
+                      <span className="block truncate text-neutral-100">{product.name}</span>
+                      <span className="block truncate text-xs text-neutral-500">
+                        {product.tier}
+                        {product.part_number ? ` · ${product.part_number}` : ""}
+                        {product.category ? ` · ${product.category}` : ""}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-1 text-xs text-neutral-500 group-hover:text-neutral-200">
+                      {index === 0 ? <kbd className="rounded border border-neutral-700 px-1 text-[0.65rem]">Enter</kbd> : null}
+                      <IconPlus size={14} />
+                      Add
+                    </span>
+                  </button>
                 </li>
               ))}
             </ul>
           )}
-
-          <label className="mt-4 flex flex-col gap-1 text-sm text-neutral-200">
-            Note (optional)
-            <textarea
-              value={note}
-              rows={2}
-              disabled={submitting}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="e.g. PO 4471, received from Cytron"
-              className="rounded-lg border border-neutral-700 px-3 py-2 text-base text-neutral-100"
-            />
-          </label>
-
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <Button type="submit" disabled={submitting || lines.length === 0}>
-              {submitting ? "Recording…" : "Record restock"}
-            </Button>
-            {lines.length > 0 ? (
-              <Button
-                variant="ghost"
-                disabled={submitting}
-                onClick={() => {
-                  setLines([]);
-                  setNote("");
-                  // A fresh token: whatever was half-attempted is abandoned
-                  // on purpose, not retried.
-                  clientTokenRef.current = null;
-                  setFeedback(null);
-                }}
-              >
-                Clear
-              </Button>
-            ) : null}
-            {lines.length > 0 ? (
-              <span className="text-sm text-neutral-400">
-                {units} {units === 1 ? "unit" : "units"} into the store
-              </span>
-            ) : null}
-          </div>
         </Card>
-      </form>
+
+        <form onSubmit={handleCommit} className="lg:sticky lg:top-6 lg:col-span-2">
+          <Card title="Delivery" subtitle={lines.length > 0 ? describeRestock(lines) : undefined}>
+            {lines.length === 0 ? (
+              <EmptyState className="py-6" message="Nothing added yet. Search and add what you received." />
+            ) : (
+              <ul className="flex flex-col divide-y divide-neutral-800/70">
+                {lines.map((line) => (
+                  <li key={line.productId} className="flex items-center justify-between gap-2 py-2">
+                    <div className="min-w-0 text-sm">
+                      <div className="truncate text-neutral-100">{line.name}</div>
+                      <div className="text-xs text-neutral-500">{line.unit}</div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <Stepper
+                        label={line.name}
+                        value={line.qty}
+                        min={1}
+                        onChange={(qty) => setLines((prev) => setLineQty(prev, line.productId, qty))}
+                        disabled={submitting}
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={line.qty}
+                        aria-label={`${line.name} quantity`}
+                        disabled={submitting}
+                        onChange={(e) =>
+                          setLines((prev) => setLineQty(prev, line.productId, Number.parseInt(e.target.value, 10) || 0))
+                        }
+                        className="min-h-10 w-16 rounded-lg border border-neutral-800 bg-neutral-950 px-2 text-sm tabular-nums text-neutral-100"
+                      />
+                      <button
+                        type="button"
+                        aria-label={`Remove ${line.name}`}
+                        disabled={submitting}
+                        onClick={() => setLines((prev) => removeLine(prev, line.productId))}
+                        className="flex size-9 cursor-pointer items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-800 hover:text-neutral-100 disabled:opacity-40"
+                      >
+                        <IconX size={15} />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <label className="mt-4 flex flex-col gap-1.5 text-sm">
+              <span className="font-medium text-neutral-300">Note</span>
+              <textarea
+                value={note}
+                rows={2}
+                disabled={submitting}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Optional, e.g. PO 4471, received from Cytron"
+                className={FIELD_AREA}
+              />
+            </label>
+
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <Button type="submit" size="sm" disabled={submitting || lines.length === 0}>
+                {submitting ? "Recording…" : lines.length > 0 ? `Record ${units} ${units === 1 ? "unit" : "units"}` : "Record restock"}
+              </Button>
+              {lines.length > 0 ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={submitting}
+                  onClick={() => {
+                    setLines([]);
+                    setNote("");
+                    // A fresh token: whatever was half-attempted is abandoned
+                    // on purpose, not retried.
+                    clientTokenRef.current = null;
+                    setFeedback(null);
+                  }}
+                >
+                  Clear
+                </Button>
+              ) : null}
+            </div>
+          </Card>
+        </form>
+      </div>
     </div>
   );
 }
