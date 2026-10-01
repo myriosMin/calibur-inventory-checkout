@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { NAV_LINKS, isActive, visibleNavLinks } from "@/app/admin/nav";
+import { NAV_GROUPS, NAV_ITEMS, activeTabHref, isActive, navItemFor, visibleNavGroups } from "@/app/admin/nav";
 import { criticalityDefaults, EMPTY_PRODUCT_FORM, formToRow } from "@/app/admin/products/product-form";
 import { DEFAULT_PRODUCT_FILTERS, filterProducts, type ProductListRow } from "@/app/admin/products/product-list";
 import { EMPTY_UNIT_FORM, unitFormToRow } from "@/app/admin/products/[id]/unit-form";
@@ -21,15 +21,30 @@ import { buildImport } from "../../scripts/import-clean-data";
  */
 
 describe("admin nav", () => {
+  const labels = (isAdmin: boolean) =>
+    visibleNavGroups(isAdmin).flatMap((group) => group.items.map((item) => item.label));
+
   it("shows admins everything", () => {
-    expect(visibleNavLinks(true)).toEqual(NAV_LINKS);
+    expect(visibleNavGroups(true)).toEqual(NAV_GROUPS);
   });
 
   it("hides people, labels and holders from procurement", () => {
-    const labels = visibleNavLinks(false).map((l) => l.label);
-    expect(labels).toEqual(expect.arrayContaining(["Review", "Products", "Restock", "Stocktake", "Holdings", "Movements"]));
-    for (const hidden of ["Members", "Holders", "Scan codes", "Bind queue", "Labels"]) {
-      expect(labels).not.toContain(hidden);
+    expect(labels(false)).toEqual(expect.arrayContaining(["Review", "Products", "Restock", "Stocktake", "Stock"]));
+    for (const hidden of ["People", "Holders", "Labels"]) {
+      expect(labels(false)).not.toContain(hidden);
+    }
+    // The emptied "Admin" group goes with its heading.
+    expect(visibleNavGroups(false).map((group) => group.label)).not.toContain("Admin");
+  });
+
+  it("keeps every admin page reachable from the sidebar", () => {
+    const reachable = NAV_ITEMS.flatMap((item) => [item.href, ...(item.tabs ?? []).map((tab) => tab.href)]);
+    for (const href of [
+      "/admin", "/admin/review", "/admin/products", "/admin/holders", "/admin/members",
+      "/admin/join-codes", "/admin/scan-codes", "/admin/bind-queue", "/admin/restock",
+      "/admin/movements", "/admin/holdings", "/admin/stocktake", "/admin/stocktake/variance", "/admin/labels",
+    ]) {
+      expect(reachable).toContain(href);
     }
   });
 
@@ -38,6 +53,20 @@ describe("admin nav", () => {
     expect(isActive("/admin/products/abc", "/admin")).toBe(false);
     expect(isActive("/admin/products/abc", "/admin/products")).toBe(true);
     expect(isActive("/admin/holdings", "/admin/holders")).toBe(false);
+  });
+
+  it("finds the entry that owns a tabbed page", () => {
+    expect(navItemFor("/admin/bind-queue")?.label).toBe("People");
+    expect(navItemFor("/admin/members/123")?.label).toBe("People");
+    expect(navItemFor("/admin/movements")?.label).toBe("Stock");
+    expect(navItemFor("/admin/holders")?.label).toBe("Holders");
+    expect(navItemFor("/admin")?.label).toBe("Dashboard");
+  });
+
+  it("picks the longest matching tab", () => {
+    const tabs = navItemFor("/admin/stocktake")!.tabs!;
+    expect(activeTabHref("/admin/stocktake", tabs)).toBe("/admin/stocktake");
+    expect(activeTabHref("/admin/stocktake/variance", tabs)).toBe("/admin/stocktake/variance");
   });
 });
 

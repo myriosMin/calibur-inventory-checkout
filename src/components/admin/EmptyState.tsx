@@ -10,17 +10,12 @@ export interface EmptyStateProps {
 
 /**
  * The bottom rung of the loading / error / empty ladder every admin list
- * renders. Padded to sit flush inside an unpadded Card, matching the
- * existing `<p className="p-4 text-sm text-neutral-400">No X yet.</p>`.
+ * renders. Padded to sit flush inside an unpadded Card.
  */
-export default function EmptyState({
-  message,
-  action,
-  className = "",
-}: EmptyStateProps) {
+export default function EmptyState({ message, action, className = "" }: EmptyStateProps) {
   return (
-    <div className={`p-4 ${className}`}>
-      <p className="text-sm text-neutral-400">{message}</p>
+    <div className={`px-4 py-8 text-center ${className}`}>
+      <p className="text-sm text-neutral-500">{message}</p>
       {action ? <div className="mt-3">{action}</div> : null}
     </div>
   );

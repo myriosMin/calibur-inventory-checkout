@@ -2,9 +2,22 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 export type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 
+/**
+ * `md` is the Mini App's thumb-sized, uppercase button. `sm` is for the
+ * laptop admin: sentence case and smaller, so a toolbar of them reads as
+ * controls rather than shouting. A size never changes the variant's colour.
+ */
+export type ButtonSize = "md" | "sm";
+
+const SIZE_CLASSES: Record<ButtonSize, string> = {
+  md: "min-h-11 px-4 py-2 text-base uppercase tracking-wide",
+  sm: "min-h-9 gap-1.5 px-3 py-1.5 text-sm",
+};
+
 export interface ButtonProps
   extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> {
   variant?: ButtonVariant;
+  size?: ButtonSize;
   children: ReactNode;
 }
 
@@ -38,6 +51,7 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
  */
 export default function Button({
   variant = "primary",
+  size = "md",
   className = "",
   disabled = false,
   type = "button",
@@ -48,7 +62,7 @@ export default function Button({
     <button
       type={type}
       disabled={disabled}
-      className={`inline-flex min-h-11 items-center justify-center rounded-lg px-4 py-2 text-base font-medium uppercase tracking-wide transition-colors disabled:cursor-not-allowed disabled:shadow-none ${VARIANT_CLASSES[variant]} ${className}`}
+      className={`inline-flex cursor-pointer items-center justify-center rounded-lg font-medium transition-colors disabled:cursor-not-allowed disabled:shadow-none ${SIZE_CLASSES[size]} ${VARIANT_CLASSES[variant]} ${className}`}
       {...rest}
     >
       {children}

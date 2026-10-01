@@ -1,16 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import Card from "@/components/admin/Card";
 import DataTable, { type Column } from "@/components/admin/DataTable";
 import EmptyState from "@/components/admin/EmptyState";
+import InfoTip from "@/components/admin/InfoTip";
 import PageHeader from "@/components/admin/PageHeader";
 import StatusPill from "@/components/admin/StatusPill";
 import Button from "@/components/ui/Button";
-import { IconPrinter } from "@/components/ui/icons";
+import { IconAlert, IconCheck, IconPrinter, IconSearch } from "@/components/ui/icons";
 import Toast from "@/components/ui/Toast";
+import { KEYS, revalidate, useLocations, useProducts, useScanCodes } from "@/lib/admin/queries";
 import { insertScanCodesWithRetry } from "@/lib/codes/insert";
 import {
   inspectLabelUrlConfig,
@@ -19,7 +21,6 @@ import {
 } from "@/lib/codes/label-url";
 import { MIN_QR_SYMBOL_MM, symbolSizeMm } from "@/lib/codes/qr";
 import { getBrowserClient } from "@/lib/supabase/browser";
-import { REPORT_ROW_LIMIT, truncationNotice } from "@/lib/reports/queries";
 
 import LabelSheet from "./LabelSheet";
 import {
@@ -52,23 +53,28 @@ interface FeedbackState {
 }
 
 const INPUT_CLASS =
-  "rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100";
+  "min-h-9 rounded-lg border border-neutral-800 bg-neutral-900/60 px-3 text-sm text-neutral-100";
 
 export default function LabelsClient() {
-  const supabase = useMemo(() => getBrowserClient(), []);
+  const supabase = getBrowserClient();
   const searchParams = useSearchParams();
   // Single-label reprint arrives as /admin/labels?code=A3F9K2 from the
   // "Print label" action on /admin/scan-codes -- one pipeline, not two.
   const requestedCode = searchParams.get("code");
 
-  const [scanCodes, setScanCodes] = useState<ScanCode[]>([]);
-  const [products, setProducts] = useState<LabelProduct[]>([]);
-  const [locations, setLocations] = useState<LabelLocation[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  // Shared, paged, cached reads (src/lib/admin/queries.ts). One code per
+  // product on the 567-row catalog is already past half of PostgREST's
+  // 1000-row cap, and a print page that silently drops labels is how a shelf
+  // ends up with no sticker and nobody knowing why.
+  const codesQ = useScanCodes();
+  const productsQ = useProducts();
+  const locationsQ = useLocations();
+  const scanCodes: ScanCode[] = useMemo(() => codesQ.data ?? [], [codesQ.data]);
+  const products: LabelProduct[] = useMemo(() => productsQ.data ?? [], [productsQ.data]);
+  const locations: LabelLocation[] = useMemo(() => locationsQ.data ?? [], [locationsQ.data]);
+  const loading = codesQ.isLoading || productsQ.isLoading || locationsQ.isLoading;
+  const loadError = ((codesQ.error ?? productsQ.error ?? locationsQ.error) as Error | undefined)?.message ?? null;
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
-  /** Set when one of the three reads came back at its row cap — see loadAll. */
-  const [truncated, setTruncated] = useState<string | null>(null);
 
   const [locationFilter, setLocationFilter] = useState<string>(ALL_LOCATIONS);
   const [search, setSearch] = useState("");
@@ -95,60 +101,6 @@ export default function LabelsClient() {
   const moduleCount = qrModuleCount(urlBudget.qrVersion ?? 4);
   const geometryWarnings = checkGeometry(geometry, moduleCount);
   const symbolMm = symbolSizeMm(geometry.qrBoxMm, moduleCount);
-
-  const loadAll = useCallback(async () => {
-    setLoading(true);
-    setLoadError(null);
-    // Explicit limits, not PostgREST's implicit 1000. One code per product on
-    // the real 538-row catalog is already halfway there, and a print page that
-    // silently drops labels is how a shelf ends up with no sticker and nobody
-    // knowing why.
-    const [codesRes, productsRes, locationsRes] = await Promise.all([
-      supabase
-        .from("scan_codes")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(REPORT_ROW_LIMIT),
-      supabase
-        .from("products")
-        .select("id, name, location_id, tier, active, part_number")
-        .order("name", { ascending: true })
-        .limit(REPORT_ROW_LIMIT),
-      supabase
-        .from("locations")
-        .select("id, name, parent_id")
-        .order("name", { ascending: true })
-        .limit(REPORT_ROW_LIMIT),
-    ]);
-
-    const firstError = codesRes.error ?? productsRes.error ?? locationsRes.error;
-    if (firstError) {
-      setLoadError(firstError.message);
-      setLoading(false);
-      return;
-    }
-
-    setScanCodes(codesRes.data ?? []);
-    setProducts(productsRes.data ?? []);
-    setLocations(locationsRes.data ?? []);
-    setTruncated(
-      truncationNotice("scan codes", codesRes.data?.length ?? 0) ??
-        truncationNotice("products", productsRes.data?.length ?? 0) ??
-        truncationNotice("locations", locationsRes.data?.length ?? 0),
-    );
-    setLoading(false);
-  }, [supabase]);
-
-  useEffect(() => {
-    // Mount-only fetch with the `cancelled` guard used across /admin.
-    let cancelled = false;
-    (async () => {
-      if (!cancelled) await loadAll();
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [loadAll]);
 
   // The print rules have to reach the admin chrome in layout.tsx, which this
   // page doesn't own; a body class scopes them to this route and restores
@@ -308,7 +260,7 @@ export default function LabelsClient() {
         variant: "success",
         message: `Generated ${created.length} scan code${created.length === 1 ? "" : "s"}. They are selected below — print the sheet.`,
       });
-      await loadAll();
+      await revalidate(KEYS.scanCodes);
       setSelected((prev) => {
         const next = new Set(prev);
         for (const row of created) next.add(row.code);
@@ -390,18 +342,24 @@ export default function LabelsClient() {
 
       <div className={SCREEN_ONLY_CLASS}>
         <PageHeader
-          title="Labels"
-          description="Generate and print the QR stickers. One label per storage compartment — a group label for a shelf of closely-related parts, a product label for everything else."
+          title="Print labels"
+          description="QR stickers, one per storage compartment."
+          info={
+            <>
+              <p>
+                A group label covers a shelf of closely-related parts (the resistor book); a product label covers
+                everything else. Picking a location selects that whole shelf.
+              </p>
+              <p>
+                Print on laser, matte polyester or vinyl with scaling at 100%, not &ldquo;fit to page&rdquo;, which
+                shrinks every QR below {MIN_QR_SYMBOL_MM} mm.
+              </p>
+            </>
+          }
           actions={
-            <Button
-              onClick={() => window.print()}
-              disabled={selectedSpecs.length === 0}
-              className="gap-2"
-            >
+            <Button onClick={() => window.print()} disabled={selectedSpecs.length === 0} size="sm">
               <IconPrinter size={16} />
-              <span className="ml-2">
-                Print {selectedSpecs.length || "—"}
-              </span>
+              Print {selectedSpecs.length > 0 ? selectedSpecs.length : ""}
             </Button>
           }
         />
@@ -417,20 +375,23 @@ export default function LabelsClient() {
         </div>
       ) : null}
 
-      {/* --- the size budget, loudly ------------------------------------ */}
+      {/* --- the size budget: quiet when fine, loud when not ------------- */}
       <div className={SCREEN_ONLY_CLASS}>
         {urlBudget.error ? (
           <Toast variant="error" message={urlBudget.error} />
         ) : urlBudget.withinBudget ? (
-          <Card title="Link size">
-            <p className="text-sm text-neutral-300">
-              <span className="font-mono text-neutral-100">{urlBudget.sampleUrl}</span>
-              <br />
-              {urlBudget.byteLength} of {QR_V3_L_BYTE_BUDGET} bytes — QR version{" "}
-              {urlBudget.qrVersion} ({moduleCount}×{moduleCount} modules), printing at{" "}
-              {symbolMm.toFixed(1)} mm on this sheet (minimum {MIN_QR_SYMBOL_MM} mm).
-            </p>
-          </Card>
+          <p className="flex items-center gap-1.5 text-sm text-neutral-500">
+            <IconCheck size={15} className="text-green-400" />
+            Link fits QR version {urlBudget.qrVersion}, printing at {symbolMm.toFixed(1)} mm
+            <InfoTip label="Link size details">
+              <p className="font-mono text-xs break-all text-neutral-200">{urlBudget.sampleUrl}</p>
+              <p>
+                {urlBudget.byteLength} of {QR_V3_L_BYTE_BUDGET} bytes: QR version {urlBudget.qrVersion} ({moduleCount}×
+                {moduleCount} modules), {symbolMm.toFixed(1)} mm on this sheet (minimum {MIN_QR_SYMBOL_MM} mm). One
+                byte over and every sticker jumps a QR version and gets harder to scan.
+              </p>
+            </InfoTip>
+          </p>
         ) : (
           <Toast
             variant="error"
@@ -453,12 +414,6 @@ export default function LabelsClient() {
         )}
       </div>
 
-      {truncated ? (
-        <div className={SCREEN_ONLY_CLASS}>
-          <Toast variant="error" message={truncated} />
-        </div>
-      ) : null}
-
       {geometryWarnings.length > 0 ? (
         <div className={`space-y-2 ${SCREEN_ONLY_CLASS}`}>
           {geometryWarnings.map((warning) => (
@@ -467,134 +422,107 @@ export default function LabelsClient() {
         </div>
       ) : null}
 
-      {/* --- filters ---------------------------------------------------- */}
-      <div className={SCREEN_ONLY_CLASS}>
-        <Card title="Batch">
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-400" htmlFor="location-filter">
-                Location
-              </label>
-              <select
-                id="location-filter"
-                className={INPUT_CLASS}
-                value={locationFilter}
-                onChange={(e) => handleLocationChange(e.target.value)}
-              >
-                <option value={ALL_LOCATIONS}>All locations</option>
-                <option value={NO_LOCATION}>No location set</option>
-                {locations.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {locationPath(l.id, locationsById)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-400" htmlFor="label-search">
-                Search
-              </label>
-              <input
-                id="label-search"
-                type="search"
-                className={INPUT_CLASS}
-                value={search}
-                placeholder="Name or code"
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-400" htmlFor="sheet-select">
-                Sticker sheet
-              </label>
-              <select
-                id="sheet-select"
-                className={INPUT_CLASS}
-                value={sheetId}
-                onChange={(e) => setSheetId(e.target.value)}
-              >
-                {SHEET_GEOMETRIES.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex gap-2">
-              <Button
-                variant="secondary"
-                className="min-h-0 px-2 py-1 text-xs"
-                onClick={selectAllVisible}
-                disabled={visibleSpecs.length === 0}
-              >
-                Select all shown
-              </Button>
-              <Button
-                variant="ghost"
-                className="min-h-0 px-2 py-1 text-xs"
-                onClick={clearSelection}
-                disabled={selected.size === 0}
-              >
-                Clear
-              </Button>
-            </div>
-          </div>
-
-          <p className="mt-3 text-sm text-neutral-400">
-            {selectedSpecs.length} selected of {visibleSpecs.length} shown —{" "}
-            {sheetCount} sheet{sheetCount === 1 ? "" : "s"} at {perSheet} per A4.
-          </p>
-        </Card>
-      </div>
-
-      {/* --- missing codes ---------------------------------------------- */}
+      {/* --- missing codes: the one thing to act on before printing ------- */}
       {productsMissingCodes.length > 0 ? (
         <div className={SCREEN_ONLY_CLASS}>
-          <Card
-            title={`${productsMissingCodes.length} product${productsMissingCodes.length === 1 ? "" : "s"} with no label code`}
-            actions={
-              <Button
-                className="min-h-0 px-3 py-1.5 text-xs"
-                onClick={handleBulkGenerate}
-                disabled={generating}
-              >
-                {generating
-                  ? "Generating…"
-                  : `Generate ${productsMissingCodes.length} code${productsMissingCodes.length === 1 ? "" : "s"}`}
-              </Button>
-            }
-          >
-            <p className="text-sm text-neutral-400">
-              These would get no sticker at all. Generating creates one active scan
-              code each — opaque, 7 characters, never derived from the product — and
-              adds them to the selection below.
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+            <IconAlert size={16} className="shrink-0 text-amber-400" />
+            <p className="min-w-0 flex-1 text-sm text-neutral-200">
+              <span className="font-semibold tabular-nums">{productsMissingCodes.length}</span> product
+              {productsMissingCodes.length === 1 ? " has" : "s have"} no label code and would get no sticker.
+              <InfoTip label="Which products">
+                <p>
+                  Generating creates one active scan code each (opaque, never derived from the product) and adds
+                  them to the selection.
+                </p>
+                <p className="text-neutral-400">
+                  {productsMissingCodes
+                    .slice(0, 12)
+                    .map((p) => p.name)
+                    .join(", ")}
+                  {productsMissingCodes.length > 12 ? `, and ${productsMissingCodes.length - 12} more` : ""}
+                </p>
+              </InfoTip>
             </p>
-            <p className="mt-2 text-sm text-neutral-500">
-              {productsMissingCodes
-                .slice(0, 12)
-                .map((p) => p.name)
-                .join(", ")}
-              {productsMissingCodes.length > 12
-                ? `, and ${productsMissingCodes.length - 12} more`
-                : ""}
-            </p>
-          </Card>
+            <Button variant="secondary" size="sm" onClick={handleBulkGenerate} disabled={generating}>
+              {generating ? "Generating…" : `Generate ${productsMissingCodes.length}`}
+            </Button>
+          </div>
         </div>
       ) : null}
 
+      {/* --- one filter row ---------------------------------------------- */}
+      <div className={`flex flex-wrap items-center gap-2 ${SCREEN_ONLY_CLASS}`}>
+        <label className="sr-only" htmlFor="location-filter">
+          Location
+        </label>
+        <select
+          id="location-filter"
+          className={INPUT_CLASS}
+          value={locationFilter}
+          onChange={(e) => handleLocationChange(e.target.value)}
+        >
+          <option value={ALL_LOCATIONS}>All locations</option>
+          <option value={NO_LOCATION}>No location set</option>
+          {locations.map((l) => (
+            <option key={l.id} value={l.id}>
+              {locationPath(l.id, locationsById)}
+            </option>
+          ))}
+        </select>
+
+        <label className="relative block">
+          <span className="sr-only">Search labels</span>
+          <IconSearch size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+          <input
+            id="label-search"
+            type="search"
+            className={`${INPUT_CLASS} w-52 pl-9`}
+            value={search}
+            placeholder="Name or code"
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </label>
+
+        <label className="sr-only" htmlFor="sheet-select">
+          Sticker sheet
+        </label>
+        <select
+          id="sheet-select"
+          className={INPUT_CLASS}
+          value={sheetId}
+          onChange={(e) => setSheetId(e.target.value)}
+        >
+          {SHEET_GEOMETRIES.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.name}
+            </option>
+          ))}
+        </select>
+
+        <span className="ml-auto flex items-center gap-2 text-sm text-neutral-400">
+          <span className="tabular-nums">
+            {selectedSpecs.length} selected · {sheetCount} sheet{sheetCount === 1 ? "" : "s"} at {perSheet}/A4
+          </span>
+          {selected.size > 0 ? (
+            <Button variant="ghost" size="sm" onClick={clearSelection}>
+              Clear
+            </Button>
+          ) : null}
+        </span>
+      </div>
+
       {/* --- picker ------------------------------------------------------ */}
       <div className={SCREEN_ONLY_CLASS}>
-        <Card title="Labels" padded={false}>
+        <Card padded={false}>
           <DataTable
             columns={columns}
             rows={visibleSpecs}
             rowKey={(spec) => spec.code}
             loading={loading}
             error={loadError}
-            emptyMessage="No active scan codes match this filter. Create them on the Scan codes page, or generate the missing ones above."
+            emptyMessage="No active scan codes match this filter. Create them on the Scan codes tab, or generate the missing ones above."
+            pageSize={100}
           />
         </Card>
       </div>
@@ -606,11 +534,7 @@ export default function LabelsClient() {
         </div>
       ) : (
         <>
-          <p className={`text-sm text-neutral-400 ${SCREEN_ONLY_CLASS}`}>
-            Print preview — laser, matte polyester or vinyl, scaling set to 100%
-            (not &quot;fit to page&quot;, which shrinks every QR below{" "}
-            {MIN_QR_SYMBOL_MM} mm).
-          </p>
+          <h2 className={`text-sm font-medium text-neutral-400 ${SCREEN_ONLY_CLASS}`}>Print preview</h2>
           <LabelSheet specs={selectedSpecs} geometry={geometry} />
         </>
       )}

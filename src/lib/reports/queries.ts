@@ -20,6 +20,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { fetchAllRows } from "@/lib/supabase/fetch-all";
 import type { Database } from "@/lib/types/database";
 
 import type { LedgerRow } from "./overdue";
@@ -28,38 +29,21 @@ import type { StockLevelRow } from "./stock";
 export type ReportClient = SupabaseClient<Database>;
 
 /**
- * Generous for a club of ~120 members: the whole ledger is in the low
- * thousands of rows after a season. Explicit rather than implicit because
- * PostgREST's own default (1000) would silently truncate a report and give
- * a wrong answer that looks like a right one.
+ * Every list read here pages through `fetchAllRows` rather than asking for
+ * one big `.limit()`. PostgREST clamps ANY limit to the project's `max_rows`
+ * (1000) and says nothing, so the old `.limit(20000)` quietly stopped at 1000
+ * -- `holdings` passed that in production (1088 rows) before anyone noticed.
+ * Each query orders on a unique key so pages can't skip or repeat rows.
  */
-export const REPORT_ROW_LIMIT = 20000;
-
-/**
- * "Did this query come back truncated?", as a sentence an admin can act on.
- *
- * PostgREST caps an unbounded select at 1000 rows and says nothing about it,
- * which on a stock page is worse than a slow page: the numbers are simply
- * wrong and look right. Every read that can grow with the catalog therefore
- * asks for an explicit `REPORT_ROW_LIMIT`, and a result that comes back AT
- * the limit is assumed to have more behind it — one wasted sentence when the
- * count lands exactly on the limit, versus silently hiding stock otherwise.
- *
- * Returns null when there is nothing to say, so a caller can render it
- * conditionally without a second predicate.
- */
-export function truncationNotice(
+async function all<T>(
   what: string,
-  rowCount: number,
-  limit: number = REPORT_ROW_LIMIT,
-): string | null {
-  if (rowCount < limit) return null;
-  return `Showing the first ${limit} ${what}. There are more, and they are not on this page — narrow the filters or export the full data instead.`;
-}
-
-function unwrap<T>(result: { data: T[] | null; error: { message: string } | null }, what: string): T[] {
-  if (result.error) throw new Error(`${what}: ${result.error.message}`);
-  return result.data ?? [];
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  try {
+    return await fetchAllRows(page);
+  } catch (error) {
+    throw new Error(`${what}: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -68,12 +52,12 @@ function unwrap<T>(result: { data: T[] | null; error: { message: string } | null
 
 /** Every active product's store/outside balance, from the corrected `stock_summary` view. */
 export async function fetchStockLevels(client: ReportClient): Promise<StockLevelRow[]> {
-  const rows = unwrap(
-    await client
+  const rows = await all("stock_summary", (from, to) =>
+    client
       .from("stock_summary")
       .select("product_id, name, tier, unit, min_stock, qty_in_store, qty_out")
-      .limit(REPORT_ROW_LIMIT),
-    "stock_summary",
+      .order("product_id")
+      .range(from, to),
   );
 
   return rows
@@ -115,24 +99,25 @@ export interface BorrowerHolder {
  * to narrow in TypeScript than a lookup over a handful of rows.
  */
 export async function fetchBorrowerHolders(client: ReportClient): Promise<BorrowerHolder[]> {
-  const holders = unwrap(
-    await client
-      .from("holders")
-      .select("id, name, member_id")
-      .eq("kind", "member")
-      .eq("active", true)
-      .limit(REPORT_ROW_LIMIT),
-    "holders",
-  );
-
-  const members = unwrap(
-    await client
-      .from("members")
-      .select("id, full_name, display_name, telegram_user_id, active")
-      .eq("active", true)
-      .limit(REPORT_ROW_LIMIT),
-    "members",
-  );
+  const [holders, members] = await Promise.all([
+    all("holders", (from, to) =>
+      client
+        .from("holders")
+        .select("id, name, member_id")
+        .eq("kind", "member")
+        .eq("active", true)
+        .order("id")
+        .range(from, to),
+    ),
+    all("members", (from, to) =>
+      client
+        .from("members")
+        .select("id, full_name, display_name, telegram_user_id, active")
+        .eq("active", true)
+        .order("id")
+        .range(from, to),
+    ),
+  ]);
 
   const byId = new Map(members.map((member) => [member.id, member]));
 
@@ -154,9 +139,8 @@ export async function fetchBorrowerHolders(client: ReportClient): Promise<Borrow
 
 /** Store-kind holder ids. Normally one ("Store"), but the schema allows more. */
 export async function fetchStoreHolderIds(client: ReportClient): Promise<string[]> {
-  const rows = unwrap(
-    await client.from("holders").select("id").eq("kind", "store").limit(REPORT_ROW_LIMIT),
-    "holders (store)",
+  const rows = await all("holders (store)", (from, to) =>
+    client.from("holders").select("id").eq("kind", "store").order("id").range(from, to),
   );
   return rows.map((row) => row.id);
 }
@@ -169,14 +153,14 @@ export async function fetchHolderLedger(
   if (holderIds.length === 0) return [];
   const list = holderIds.join(",");
 
-  const rows = unwrap(
-    await client
+  const rows = await all("stock_movements (holder ledger)", (from, to) =>
+    client
       .from("stock_movements")
       .select("product_id, from_holder_id, to_holder_id, qty, created_at")
       .or(`from_holder_id.in.(${list}),to_holder_id.in.(${list})`)
       .order("created_at", { ascending: true })
-      .limit(REPORT_ROW_LIMIT),
-    "stock_movements (holder ledger)",
+      .order("id", { ascending: true })
+      .range(from, to),
   );
 
   return rows.map((row) => ({
@@ -203,14 +187,14 @@ export async function fetchStoreDeltaSince(
   if (storeIds.length === 0) return new Map();
   const list = storeIds.join(",");
 
-  const rows = unwrap(
-    await client
+  const rows = await all("stock_movements (store delta)", (from, to) =>
+    client
       .from("stock_movements")
       .select("product_id, from_holder_id, to_holder_id, qty")
       .gte("created_at", sinceIso)
       .or(`from_holder_id.in.(${list}),to_holder_id.in.(${list})`)
-      .limit(REPORT_ROW_LIMIT),
-    "stock_movements (store delta)",
+      .order("id")
+      .range(from, to),
   );
 
   const store = new Set(storeIds);
@@ -243,13 +227,13 @@ export interface ProductRef {
 }
 
 export async function fetchProducts(client: ReportClient): Promise<ProductRef[]> {
-  const rows = unwrap(
-    await client
+  const rows = await all("products", (from, to) =>
+    client
       .from("products")
       .select("id, name, tier, unit, returnable, min_stock, location_id, category, part_number, active")
       .order("name")
-      .limit(REPORT_ROW_LIMIT),
-    "products",
+      .order("id")
+      .range(from, to),
   );
 
   return rows.map((row) => ({
@@ -282,14 +266,14 @@ export async function fetchSessionsSince(
   client: ReportClient,
   sinceIso: string,
 ): Promise<SessionRow[]> {
-  const rows = unwrap(
-    await client
+  const rows = await all("sessions", (from, to) =>
+    client
       .from("sessions")
       .select("id, mode, source, started_at, committed_at")
       .gte("started_at", sinceIso)
       .order("started_at", { ascending: true })
-      .limit(REPORT_ROW_LIMIT),
-    "sessions",
+      .order("id", { ascending: true })
+      .range(from, to),
   );
 
   return rows.map((row) => ({
@@ -313,14 +297,14 @@ export async function fetchEntriesSince(
   client: ReportClient,
   sinceIso: string,
 ): Promise<EntryRow[]> {
-  const rows = unwrap(
-    await client
+  const rows = await all("stock_movements (entries)", (from, to) =>
+    client
       .from("stock_movements")
       .select("product_id, entry_method, scan_code, created_at")
       .gte("created_at", sinceIso)
       .order("created_at", { ascending: true })
-      .limit(REPORT_ROW_LIMIT),
-    "stock_movements (entries)",
+      .order("id", { ascending: true })
+      .range(from, to),
   );
 
   return rows.map((row) => ({
@@ -342,14 +326,14 @@ export async function fetchScanMissesSince(
   client: ReportClient,
   sinceIso: string,
 ): Promise<ScanMissRow[]> {
-  const rows = unwrap(
-    await client
+  const rows = await all("scan_misses", (from, to) =>
+    client
       .from("scan_misses")
       .select("id, code, outcome, created_at")
       .gte("created_at", sinceIso)
       .order("created_at", { ascending: false })
-      .limit(REPORT_ROW_LIMIT),
-    "scan_misses",
+      .order("id", { ascending: false })
+      .range(from, to),
   );
 
   return rows.map((row) => ({
@@ -379,12 +363,12 @@ export interface ScanCodeRef {
 }
 
 export async function fetchScanCodes(client: ReportClient): Promise<ScanCodeRef[]> {
-  const rows = unwrap(
-    await client
+  const rows = await all("scan_codes", (from, to) =>
+    client
       .from("scan_codes")
       .select("code, kind, product_id, location_id, active")
-      .limit(REPORT_ROW_LIMIT),
-    "scan_codes",
+      .order("code")
+      .range(from, to),
   );
 
   return rows.map((row) => ({

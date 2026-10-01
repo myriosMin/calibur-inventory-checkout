@@ -42,8 +42,17 @@ export interface HolderGroup {
   productCount: number;
   /** Sum of qty -- can be negative, and that is meaningful, not a bug. */
   totalUnits: number;
+  /**
+   * Negative lines worth chasing. Always 0 for the consumed/adjustment
+   * pseudo-holders: they are the other side of every consume and every
+   * opening balance, so "negative" is their normal state (the live
+   * Adjustment holder sits at -486 lines by design), not a data problem.
+   */
   negativeCount: number;
 }
+
+/** Bookkeeping holders: where stock went or came from, never where it is. */
+export const PSEUDO_HOLDER_KINDS = new Set(["consumed", "adjustment"]);
 
 /**
  * Display order: the store first (it is the question everyone opens this page
@@ -108,6 +117,7 @@ export function groupHoldingsByHolder(
   const groups = [...byHolder.values()];
   for (const group of groups) {
     // Negative balances first: they are the reason to read this page.
+    // (Harmless on the pseudo-holders, where every line is negative.)
     group.lines.sort((a, b) => {
       const aNeg = a.qty < 0 ? 0 : 1;
       const bNeg = b.qty < 0 ? 0 : 1;
@@ -116,7 +126,9 @@ export function groupHoldingsByHolder(
     });
     group.productCount = group.lines.length;
     group.totalUnits = group.lines.reduce((sum, line) => sum + line.qty, 0);
-    group.negativeCount = group.lines.filter((line) => line.qty < 0).length;
+    group.negativeCount = PSEUDO_HOLDER_KINDS.has(group.holder.kind)
+      ? 0
+      : group.lines.filter((line) => line.qty < 0).length;
   }
 
   groups.sort((a, b) => {

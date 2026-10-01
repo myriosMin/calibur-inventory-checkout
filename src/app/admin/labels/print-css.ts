@@ -3,7 +3,7 @@ import { A4_HEIGHT_MM, A4_WIDTH_MM } from "./sheet-geometry";
 
 /**
  * Class the page puts on `<body>` while it is mounted. The admin chrome
- * (nav header, page padding) lives in src/app/admin/layout.tsx, which this
+ * (sidebar, section tabs, page padding) lives in src/app/admin/AdminShell.tsx, which this
  * page does not own and must not edit -- so the print rules reach it from
  * here, scoped to this class, and every other admin page prints exactly as
  * it did before.
@@ -147,9 +147,11 @@ export function sheetPrintCss(geometry: SheetGeometry): string {
     padding: 0 !important;
     background: #ffffff !important;
   }
-  /* Admin nav, sign-out, and the max-w-5xl content gutter all belong to
-     src/app/admin/layout.tsx. */
+  /* The sidebar, phone top bar, section tabs and the content gutter all
+     belong to src/app/admin/AdminShell.tsx. */
   body.${PRINT_BODY_CLASS} header,
+  body.${PRINT_BODY_CLASS} aside,
+  body.${PRINT_BODY_CLASS} nav,
   body.${PRINT_BODY_CLASS} .${SCREEN_ONLY_CLASS} {
     display: none !important;
   }

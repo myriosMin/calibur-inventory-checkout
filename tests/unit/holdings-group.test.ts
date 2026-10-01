@@ -148,6 +148,15 @@ describe("countNegativeLines", () => {
     expect(countNegativeLines(groups)).toBe(3);
   });
 
+  it("ignores the pseudo-holders, whose balances are negative by design", () => {
+    const groups = groupHoldingsByHolder(
+      [row("p-m3508", "h-adj", -40), row("p-xt30", "h-cons", -3), row("p-xt30", "h-store", -1)],
+      holders,
+      products,
+    );
+    expect(countNegativeLines(groups)).toBe(1);
+  });
+
   it("is zero when everything balances positive", () => {
     const groups = groupHoldingsByHolder(
       [row("p-m3508", "h-store", 6)],

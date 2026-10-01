@@ -1,316 +1,320 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
 
 import Card from "@/components/admin/Card";
 import DataTable, { type Column } from "@/components/admin/DataTable";
 import EmptyState from "@/components/admin/EmptyState";
+import InfoTip from "@/components/admin/InfoTip";
 import PageHeader from "@/components/admin/PageHeader";
+import Segmented from "@/components/admin/Segmented";
+import Skeleton, { TableSkeleton } from "@/components/admin/Skeleton";
 import StatusPill from "@/components/admin/StatusPill";
-import Button from "@/components/ui/Button";
-import { getBrowserClient } from "@/lib/supabase/browser";
-import { REPORT_ROW_LIMIT, truncationNotice } from "@/lib/reports/queries";
+import BarList from "@/components/admin/charts/BarList";
+import ProportionBar from "@/components/admin/charts/ProportionBar";
+import { IconChevronDown, IconSearch } from "@/components/ui/icons";
+import { useHolders, useHoldings, useProducts } from "@/lib/admin/queries";
+import { toSegments, topN } from "@/lib/reports/chart-data";
 
-import {
-  countNegativeLines,
-  groupHoldingsByHolder,
-  type HolderRef,
-  type HoldingLine,
-  type HoldingRow,
-  type ProductRef,
-} from "./group";
+import { countNegativeLines, groupHoldingsByHolder, PSEUDO_HOLDER_KINDS, type HoldingLine } from "./group";
 
-const KIND_FILTERS = [
-  { value: "", label: "All holders" },
-  { value: "store", label: "Store" },
-  { value: "robot", label: "Robots" },
-  { value: "member", label: "Members" },
-  { value: "pseudo", label: "Consumed / adjustment" },
-] as const;
+type KindFilter = "all" | "store" | "robot" | "member" | "pseudo";
 
-type KindFilter = (typeof KIND_FILTERS)[number]["value"];
-
-function matchesKindFilter(kind: string, filter: KindFilter): boolean {
-  if (filter === "") return true;
-  if (filter === "pseudo") return kind === "consumed" || kind === "adjustment";
-  return kind === filter;
+function kindOf(kind: string): Exclude<KindFilter, "all"> {
+  if (kind === "consumed" || kind === "adjustment") return "pseudo";
+  return kind as Exclude<KindFilter, "all">;
 }
+
+const KIND_LABEL: Record<Exclude<KindFilter, "all">, string> = {
+  store: "Store",
+  robot: "Robots",
+  member: "Members",
+  pseudo: "Consumed / adjustment",
+};
+
+/** Qty is flagged red only for real holders; see PSEUDO_HOLDER_KINDS. */
+function columnsFor(flagNegatives: boolean): Column<HoldingLine>[] {
+  return [
+  {
+    key: "product",
+    header: "Product",
+    render: (line) => <span className="text-neutral-100">{line.productName}</span>,
+  },
+  { key: "tier", header: "Tier", render: (line) => <span className="text-neutral-500">{line.tier}</span> },
+  {
+    key: "qty",
+    header: "Qty",
+    className: "text-right tabular-nums",
+    render: (line) =>
+      line.qty < 0 && flagNegatives ? (
+        <StatusPill tone="danger">
+          {line.qty} {line.unit}
+        </StatusPill>
+      ) : (
+        <span className="text-neutral-100">
+          {line.qty} <span className="text-neutral-500">{line.unit}</span>
+        </span>
+      ),
+  },
+];
+}
+
+const REAL_COLUMNS = columnsFor(true);
+const PSEUDO_COLUMNS = columnsFor(false);
 
 /**
  * /admin/holdings -- "where did our motors end up".
  *
- * This is the question data-model.md opens with. The spreadsheet answered it
- * with a free-text remarks cell ("15 darknus, 7 hero, 6 standard…") that
- * someone maintained by hand; here it is a `group by holder_id` over the
- * derived `holdings` view, which is just the movement ledger summed.
+ * The spreadsheet answered this with a free-text remarks cell ("15 darknus,
+ * 7 hero, 6 standard…") that someone maintained by hand; here it is a
+ * `group by holder_id` over the derived `holdings` view, which is just the
+ * movement ledger summed.
  *
- * The join to product and holder names happens in TypeScript rather than in
- * PostgREST because `holdings` is a view over a union with no declared
- * foreign keys, so it supports no embeds. Both other relations are small
- * enough to fetch whole.
+ * Names are joined in TypeScript because `holdings` is a view over a union
+ * with no declared foreign keys, so PostgREST can't embed. All three reads
+ * page past the 1000-row cap (src/lib/admin/queries.ts); before they did,
+ * this page silently dropped the 1001st holding line.
  */
 export default function AdminHoldingsPage() {
-  const supabase = useMemo(() => getBrowserClient(), []);
+  return (
+    <Suspense fallback={<TableSkeleton />}>
+      <Holdings />
+    </Suspense>
+  );
+}
 
-  const [rows, setRows] = useState<HoldingRow[]>([]);
-  const [holders, setHolders] = useState<HolderRef[]>([]);
-  const [products, setProducts] = useState<ProductRef[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  /** Set when one of the three reads came back at its row cap — see below. */
-  const [truncated, setTruncated] = useState<string | null>(null);
+function Holdings() {
+  const params = useSearchParams();
+  const holdingsQ = useHoldings();
+  const holdersQ = useHolders();
+  const productsQ = useProducts();
 
-  const [kindFilter, setKindFilter] = useState<KindFilter>("");
+  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
+  const [holderFilter, setHolderFilter] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [negativesOnly, setNegativesOnly] = useState(false);
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [negativesOnly, setNegativesOnly] = useState(params.get("negatives") === "1");
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setLoadError(null);
-      // Explicit limits, not PostgREST's implicit 1000. `holdings` is one row
-      // per (product, holder) pair, so the real 538-row catalog spread across
-      // the store, a dozen robots and ~120 members passes 1000 rows long
-      // before anything else here does — and an unbounded select would simply
-      // stop at 1000 and show a confident, wrong balance sheet.
-      const [holdingsRes, holdersRes, productsRes] = await Promise.all([
-        supabase
-          .from("holdings")
-          .select("product_id, holder_id, qty")
-          .limit(REPORT_ROW_LIMIT),
-        supabase.from("holders").select("id, name, kind").order("name").limit(REPORT_ROW_LIMIT),
-        supabase.from("products").select("id, name, unit, tier").limit(REPORT_ROW_LIMIT),
-      ]);
-      if (cancelled) return;
-
-      const firstError =
-        holdingsRes.error ?? holdersRes.error ?? productsRes.error ?? null;
-      if (firstError) {
-        setLoadError(firstError.message);
-      } else {
-        setRows(holdingsRes.data ?? []);
-        setHolders(holdersRes.data ?? []);
-        setProducts(productsRes.data ?? []);
-        setTruncated(
-          truncationNotice("holding lines", holdingsRes.data?.length ?? 0) ??
-            truncationNotice("products", productsRes.data?.length ?? 0) ??
-            truncationNotice("holders", holdersRes.data?.length ?? 0),
-        );
-      }
-      setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [supabase]);
+  const loading = holdingsQ.isLoading || holdersQ.isLoading || productsQ.isLoading;
+  const error = (holdingsQ.error ?? holdersQ.error ?? productsQ.error) as Error | undefined;
 
   const allGroups = useMemo(
-    () => groupHoldingsByHolder(rows, holders, products),
-    [rows, holders, products],
+    () => groupHoldingsByHolder(holdingsQ.data ?? [], holdersQ.data ?? [], productsQ.data ?? []),
+    [holdingsQ.data, holdersQ.data, productsQ.data],
   );
+  const totalNegatives = useMemo(() => countNegativeLines(allGroups), [allGroups]);
 
-  const totalNegatives = useMemo(
-    () => countNegativeLines(allGroups),
+  const kindCounts = useMemo(() => {
+    const counts: Record<KindFilter, number> = { all: allGroups.length, store: 0, robot: 0, member: 0, pseudo: 0 };
+    for (const group of allGroups) counts[kindOf(group.holder.kind)] += 1;
+    return counts;
+  }, [allGroups]);
+
+  // Where stock is *now*: consumed/adjustment are where it went, not where it is.
+  const unitsByKind = useMemo(() => {
+    const units = { store: 0, robot: 0, member: 0 };
+    for (const group of allGroups) {
+      const kind = kindOf(group.holder.kind);
+      if (kind === "store" || kind === "robot" || kind === "member") units[kind] += Math.max(0, group.totalUnits);
+    }
+    return toSegments([
+      { key: "store", label: "Store", value: units.store },
+      { key: "robot", label: "Robots", value: units.robot },
+      { key: "member", label: "Members", value: units.member },
+    ]).map((segment) => ({ ...segment, slot: { store: 1, robot: 2, member: 3 }[segment.key] ?? 1 }));
+  }, [allGroups]);
+
+  const topHolders = useMemo(
+    () =>
+      topN(
+        allGroups.filter((group) => ["robot", "member"].includes(group.holder.kind)),
+        8,
+        (group) => group.productCount,
+      ),
     [allGroups],
   );
 
   const visibleGroups = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return allGroups
-      .filter((group) => matchesKindFilter(group.holder.kind, kindFilter))
+      .filter((group) => kindFilter === "all" || kindOf(group.holder.kind) === kindFilter)
+      .filter((group) => !holderFilter || group.holder.id === holderFilter)
       .map((group) => ({
         ...group,
         lines: group.lines.filter(
           (line) =>
-            (!negativesOnly || line.qty < 0) &&
+            (!negativesOnly || (line.qty < 0 && group.negativeCount > 0)) &&
             (needle.length === 0 ||
-              line.productName.toLowerCase().includes(needle)),
+              line.productName.toLowerCase().includes(needle) ||
+              group.holder.name.toLowerCase().includes(needle)),
         ),
       }))
       .filter((group) => group.lines.length > 0);
-  }, [allGroups, kindFilter, search, negativesOnly]);
+  }, [allGroups, kindFilter, holderFilter, search, negativesOnly]);
 
-  const columns: Column<HoldingLine>[] = [
-    {
-      key: "product",
-      header: "Product",
-      render: (line) => (
-        <span className="text-neutral-100">{line.productName}</span>
-      ),
-    },
-    { key: "tier", header: "Tier", render: (line) => line.tier },
-    {
-      key: "qty",
-      header: "Qty",
-      className: "text-right tabular-nums",
-      render: (line) =>
-        line.qty < 0 ? (
-          <StatusPill tone="danger">
-            {line.qty} {line.unit}
-          </StatusPill>
-        ) : (
-          <span className="text-neutral-100">
-            {line.qty} {line.unit}
-          </span>
-        ),
-    },
-  ];
+  const filtering = search.trim().length > 0 || negativesOnly || holderFilter !== null;
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Holdings"
-        description="Current balance per holder, derived from the movement ledger. This is the spreadsheet's free-text allocation remark, as real data."
+        title="Who holds what"
+        description="Current balance per holder, summed from the movement ledger."
+        info="This is the spreadsheet's free-text allocation remark (“15 darknus, 7 hero…”) as real data: every borrow, return and count is a movement between holders, and these balances are those movements added up."
       />
 
-      {truncated ? (
-        <Card title="Not the whole picture">
-          <p className="text-sm text-amber-300">{truncated}</p>
+      {error ? <p className="text-sm text-red-400">{error.message}</p> : null}
+
+      <div className="grid gap-6 lg:grid-cols-5">
+        <Card title="Where stock is now" subtitle="Units held, all kinds of part" className="lg:col-span-2">
+          {loading ? <Skeleton className="h-20 w-full" /> : <ProportionBar segments={unitsByKind} emptyMessage="Nothing is held anywhere yet." />}
         </Card>
-      ) : null}
-
-      {!loading && !loadError && totalNegatives > 0 ? (
-        <Card title="Negative balances">
-          <p className="text-sm text-neutral-100">
-            <StatusPill tone="danger">{totalNegatives} negative</StatusPill>{" "}
-            <span className="ml-1">
-              {totalNegatives === 1 ? "line is" : "lines are"} below zero.
-            </span>
-          </p>
-          <p className="mt-2 text-sm text-neutral-400">
-            Borrows are deliberately never blocked on insufficient stock, so a
-            negative balance is expected and is a <strong>data-quality
-            signal</strong>, not a sign anything went missing. Nearly always it
-            means the opening balance was never recorded — the part was on the
-            shelf before the system knew about it, and the first borrow took it
-            below zero. Fix it by recording what was actually received on{" "}
-            <Link
-              href="/admin/restock"
-              className="font-medium text-red-400 hover:text-red-300"
-            >
-              Restock
-            </Link>
-            , or by counting the shelf at a stocktake.
-          </p>
+        <Card
+          title="Most held outside the store"
+          subtitle="Products per robot or member. Click one to filter."
+          className="lg:col-span-3"
+        >
+          {loading ? (
+            <Skeleton className="h-32 w-full" />
+          ) : topHolders.shown.length === 0 ? (
+            <p className="text-sm text-neutral-500">Nothing is out with a robot or member.</p>
+          ) : (
+            <BarList
+              ariaLabel="Holders with the most products"
+              selected={holderFilter}
+              onSelect={(key) => setHolderFilter((current) => (current === key ? null : key))}
+              items={topHolders.shown.map((group) => ({
+                key: group.holder.id,
+                label: (
+                  <>
+                    {group.holder.name}
+                    <span className="ml-2 text-xs text-neutral-500">{group.holder.kind}</span>
+                  </>
+                ),
+                value: group.productCount,
+              }))}
+            />
+          )}
         </Card>
-      ) : null}
+      </div>
 
-      <Card title="Filters">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <label className="flex flex-col gap-1 text-sm text-neutral-200">
-            Holder kind
-            <select
-              value={kindFilter}
-              onChange={(e) => setKindFilter(e.target.value as KindFilter)}
-              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base"
-            >
-              {KIND_FILTERS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm text-neutral-200">
-            Product
+      {/* One filter row: kind chips, search, and the negatives toggle. */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <Segmented
+          ariaLabel="Holder kind"
+          value={kindFilter}
+          onChange={(value) => {
+            setKindFilter(value);
+            setHolderFilter(null);
+          }}
+          options={(["all", "store", "robot", "member", "pseudo"] as const).map((value) => ({
+            value,
+            label: value === "all" ? "All" : KIND_LABEL[value],
+            count: kindCounts[value],
+          }))}
+        />
+        <div className="flex items-center gap-2">
+          <label className="relative block">
+            <span className="sr-only">Filter by product or holder</span>
+            <IconSearch size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
             <input
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Filter by product name…"
-              className="min-h-11 rounded-lg border border-neutral-700 px-3 text-base text-neutral-100"
+              placeholder="Product or holder…"
+              className="min-h-9 w-56 rounded-lg border border-neutral-800 bg-neutral-900/60 pl-9 pr-3 text-sm text-neutral-100 placeholder:text-neutral-600"
             />
           </label>
-
-          <label className="flex items-center gap-2 self-end text-sm text-neutral-200">
-            <input
-              type="checkbox"
-              checked={negativesOnly}
-              onChange={(e) => setNegativesOnly(e.target.checked)}
-              className="h-4 w-4"
-            />
-            Negative balances only
-          </label>
+          {totalNegatives > 0 ? (
+            <span className="flex items-center gap-1">
+              <button
+                type="button"
+                aria-pressed={negativesOnly}
+                onClick={() => setNegativesOnly((value) => !value)}
+                className={`inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-lg border px-3 text-sm transition-colors ${
+                  negativesOnly
+                    ? "border-red-500/50 bg-red-500/10 text-red-300"
+                    : "border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200"
+                }`}
+              >
+                Negative <span className="tabular-nums text-red-400">{totalNegatives}</span>
+              </button>
+              <InfoTip label="Why balances go negative">
+                <p>
+                  Borrows are never blocked on stock, so a negative balance is a data-quality signal, not a loss.
+                  Nearly always the opening balance was never recorded: the part was on the shelf before the
+                  system knew about it.
+                </p>
+                <p>
+                  Fix it by recording what was received on{" "}
+                  <Link href="/admin/restock" className="text-red-400 hover:text-red-300">
+                    Restock
+                  </Link>
+                  , or by counting the shelf.
+                </p>
+              </InfoTip>
+            </span>
+          ) : null}
         </div>
-      </Card>
+      </div>
 
       {loading ? (
-        <Card>
-          <p className="text-sm text-neutral-400">Loading…</p>
-        </Card>
-      ) : loadError ? (
-        <Card>
-          <p className="text-sm text-red-400">{loadError}</p>
+        <Card padded={false}>
+          <TableSkeleton />
         </Card>
       ) : visibleGroups.length === 0 ? (
         <Card padded={false}>
           <EmptyState
             message={
               allGroups.length === 0
-                ? "Nothing is held anywhere yet — the ledger has no movements. Record what is on the shelves on Restock."
+                ? "Nothing is held anywhere yet. Record what is on the shelves on Restock."
                 : "No holdings match these filters."
             }
           />
         </Card>
       ) : (
-        visibleGroups.map((group) => {
-          // Default open: the store (what everyone came to see) and anything
-          // with a negative line (the thing worth acting on). Everything else
-          // starts folded so a page with 20 robots is still scannable.
-          const isCollapsed =
-            collapsed[group.holder.id] ??
-            !(group.holder.kind === "store" || group.negativeCount > 0);
-          return (
-            <Card
-              key={group.holder.id}
-              padded={false}
-              title={
-                <span className="flex flex-wrap items-center gap-2">
-                  {group.holder.name}
-                  <StatusPill tone="inactive">{group.holder.kind}</StatusPill>
-                  {group.negativeCount > 0 ? (
-                    <StatusPill tone="danger">
-                      {group.negativeCount} negative
-                    </StatusPill>
-                  ) : null}
-                </span>
-              }
-              actions={
-                <>
-                  <span className="text-xs text-neutral-400">
-                    {group.lines.length}{" "}
-                    {group.lines.length === 1 ? "product" : "products"} ·{" "}
-                    {group.totalUnits} units
+        <ul className="flex flex-col gap-2">
+          {visibleGroups.map((group) => {
+            // Open by default: the store (what everyone came to see), anything
+            // with a negative line, and every match while filtering.
+            const isOpen =
+              expanded[group.holder.id] ??
+              (filtering || group.holder.kind === "store" || group.negativeCount > 0);
+            return (
+              <li key={group.holder.id} className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/60">
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  onClick={() => setExpanded((prev) => ({ ...prev, [group.holder.id]: !isOpen }))}
+                  className="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-neutral-800/30"
+                >
+                  <IconChevronDown
+                    size={16}
+                    className={`shrink-0 text-neutral-500 transition-transform ${isOpen ? "" : "-rotate-90"}`}
+                  />
+                  <span className="min-w-0 flex-1 truncate font-medium text-neutral-100">{group.holder.name}</span>
+                  <span className="hidden text-xs text-neutral-500 sm:inline">{group.holder.kind}</span>
+                  {group.negativeCount > 0 ? <StatusPill tone="danger">{group.negativeCount} negative</StatusPill> : null}
+                  <span className="w-32 shrink-0 text-right text-sm tabular-nums text-neutral-400">
+                    {group.lines.length} {group.lines.length === 1 ? "product" : "products"}
                   </span>
-                  <Button
-                    variant="secondary"
-                    className="min-h-0 px-2 py-1 text-xs"
-                    onClick={() =>
-                      setCollapsed((prev) => ({
-                        ...prev,
-                        [group.holder.id]: !isCollapsed,
-                      }))
-                    }
-                  >
-                    {isCollapsed ? "Show" : "Hide"}
-                  </Button>
-                </>
-              }
-            >
-              {isCollapsed ? null : (
-                <DataTable
-                  columns={columns}
-                  rows={group.lines}
-                  rowKey={(line) => line.productId}
-                />
-              )}
-            </Card>
-          );
-        })
+                </button>
+                {isOpen ? (
+                  <div className="border-t border-neutral-800">
+                    <DataTable
+                      columns={PSEUDO_HOLDER_KINDS.has(group.holder.kind) ? PSEUDO_COLUMNS : REAL_COLUMNS}
+                      rows={group.lines}
+                      rowKey={(line) => line.productId}
+                      rowHref={(line) => `/admin/products/${line.productId}`}
+                      pageSize={25}
+                    />
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
   );
