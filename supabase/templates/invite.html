@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+  <body style="margin:0; padding:0; background-color:#0a0a0a; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0a0a0a; padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table width="100%" style="max-width:480px; background-color:#171717; border:1px solid #262626; border-radius:12px; padding:32px;">
+            <tr>
+              <td style="color:#fafafa; font-size:20px; font-weight:600; padding-bottom:8px;">
+                Calibur Checkout
+              </td>
+            </tr>
+            <tr>
+              <td style="color:#a3a3a3; font-size:14px; line-height:1.6; padding-bottom:24px;">
+                You've been added as a staff account on the RoboMaster parts store dashboard.
+                Set a password to finish setting up access to <strong style="color:#e5e5e5;">{{ .Email }}</strong>.
+              </td>
+            </tr>
+            <tr>
+              <td style="padding-bottom:24px;">
+                <a href="{{ .ConfirmationURL }}"
+                   style="display:inline-block; background-color:#ef4444; color:#fafafa; text-decoration:none; font-size:14px; font-weight:600; padding:12px 24px; border-radius:8px;">
+                  Set your password
+                </a>
+              </td>
+            </tr>
+            <tr>
+              <td style="color:#737373; font-size:12px; line-height:1.6;">
+                This link expires soon and works once. If you weren't expecting this, you can ignore it.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

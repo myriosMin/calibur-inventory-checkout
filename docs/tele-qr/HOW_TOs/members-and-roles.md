@@ -40,11 +40,18 @@ each person joined with.
 `/admin/members` has a bulk CSV import (`operations.md` budgets this at ~1
 hour for 120 members — it's a bulk job, not one-by-one).
 
-Required column: `full_name` (also accepted: `name`). Optional:
-`display_name`, `nus_email`, `telegram_username`. Paste or upload the CSV,
-review the preview (it shows what will be created, skipped, or flagged as
-invalid before you commit anything), then commit. Duplicate emails/handles
-are skipped and reported, not silently overwritten.
+Required column: `full_name` (also accepted: `name`, `member name`, `student
+name`, …). Optional: `display_name`, `nus_email`, `telegram_username`, `role`
+(`member`/`procurement`/`admin`, defaults to `member`), `joined_at`
+(`YYYY-MM-DD`). Paste or upload the CSV, review the preview (it shows what
+will be created, skipped, or flagged as invalid before you commit anything),
+then commit. Duplicate emails/handles are skipped and reported, not silently
+overwritten.
+
+A `role` column lets the import set up procurement/admin rows too, but it
+only writes `members.role` — it does **not** create the Supabase Auth login,
+so follow up with `create-admin-user.ts` (see Roles, below) for any staff row
+it creates.
 
 Normalise handles before import if you can — lowercase, no leading `@` — the
 importer does this too, but cleaner input means fewer surprises in the
@@ -84,12 +91,53 @@ immediately; their borrow/return history is kept, not deleted.
 | `procurement` | Everything below, via `/admin`: read inventory, maintain products/locations/units, restock. Cannot stocktake, reverse movements, manage members, or write scan codes. |
 | `admin` | Everything |
 
-Set a member's role from their detail page. Procurement accounts still need a
-Supabase Auth login — create one with `npx tsx scripts/create-admin-user.ts
-<email> <password>` after setting their `members.role` to `procurement`.
-Bootstrapping the very first admin is `npx tsx scripts/bootstrap-admin.ts`,
-which does both steps and verifies `is_admin()` actually returns true for
-them.
+Set a member's role from their detail page.
+
+### Onboarding staff (admin / procurement)
+
+Join codes only ever produce `member` rows — a typed email proves nothing, so
+staff are never linked that way. Staff need two things that must match
+exactly: a `members` row with the role, and a Supabase Auth login whose email
+equals `members.nus_email`. `is_admin()`/`is_staff()` compare them with a
+plain `=`, so a mismatch of one character gives you a dashboard that signs in
+and then shows nothing but empty tables — which looks exactly like a broken
+app, not a typo.
+
+**The normal way — let them set their own password:**
+
+```bash
+npx tsx scripts/invite-admin-user.ts <email> <admin|procurement> ["Full Name"]
+```
+
+Writes the `members` row *and* emails them a link. They tap it, land on
+`/admin/login`, set a password, and are signed in. Nobody ever invents or
+relays a password. Idempotent: re-run it to re-send (an existing auth user
+gets a password-reset email, which reaches the same form).
+
+Notes on the email:
+
+- The link is **single-use and expires in 1 hour**. A second click on an
+  already-used link shows "Email link is invalid or has expired" — re-run the
+  command.
+- The free-tier Supabase mailer is **rate-limited to a couple of emails per
+  hour**, so don't batch staff invites.
+- The invite email is Supabase's generic template. Customising it needs a paid
+  plan or custom SMTP; the branded version is written and waiting at
+  `supabase/templates/invite.html`, commented out in `supabase/config.toml`.
+- `--redirect-to <url>` points the link somewhere other than production, e.g.
+  `http://localhost:3000/admin/login` when testing locally.
+
+**If you'd rather set the password yourself**, `npx tsx
+scripts/create-admin-user.ts <email> <password>` creates just the Auth user
+(set `members.role` first), and `npx tsx scripts/bootstrap-admin.ts` does both
+halves for an admin and then *verifies* `is_admin()` really returns true by
+signing in as them — the one script that proves the join works rather than
+assuming it.
+
+**Redirect URLs are config, not dashboard clicks.** `site_url` and
+`additional_redirect_urls` live in `supabase/config.toml` and are applied with
+`supabase config push`. If an auth email ever lands on `localhost` in
+production, that file is why.
 
 The nav hiding admin-only links from procurement accounts is cosmetic —
 access is actually enforced by Postgres row-level security, not by what's
