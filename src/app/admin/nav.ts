@@ -6,7 +6,7 @@
  * or refuse every write. Anyone can still type the URL; the database still
  * says no.
  *
- * Thirteen pages fit in nine entries: related pages share one entry and
+ * Fourteen pages fit in ten entries: related pages share one entry and
  * appear as tabs above the page (AdminShell renders them from `tabs`), so
  * every URL still works and still deep-links.
  */
@@ -18,6 +18,7 @@ export type NavIcon =
   | "stock"
   | "restock"
   | "stocktake"
+  | "builds"
   | "people"
   | "labels"
   | "holders";
@@ -79,6 +80,7 @@ export const NAV_GROUPS: NavGroup[] = [
           { href: "/admin/stocktake/variance", label: "Variance" },
         ],
       },
+      { href: "/admin/builds", label: "Builds", icon: "builds" },
     ],
   },
   {

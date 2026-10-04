@@ -42,6 +42,8 @@ export type ScanCodeRow = Tables["scan_codes"]["Row"];
 export type ReviewItemRow = Tables["review_items"]["Row"];
 export type HoldingViewRow = Views["holdings"]["Row"];
 export type StockCountDbRow = Tables["stock_counts"]["Row"];
+export type BuildListRow = Tables["build_lists"]["Row"];
+export type BuildListLineRow = Tables["build_list_lines"]["Row"];
 
 export const KEYS = {
   isAdmin: "admin/is-admin",
@@ -55,6 +57,8 @@ export const KEYS = {
   holdings: "admin/holdings",
   stockLevels: "admin/stock-levels",
   stockCounts: "admin/stock-counts",
+  buildLists: "admin/build-lists",
+  buildListLines: "admin/build-list-lines",
 } as const;
 
 export type AdminKey = (typeof KEYS)[keyof typeof KEYS];
@@ -209,6 +213,23 @@ export function useStockCounts() {
   return useSWR<StockCountDbRow[]>(KEYS.stockCounts, () =>
     fetchAllRows<StockCountDbRow>((from, to) =>
       db().from("stock_counts").select("*").order("created_at", { ascending: false }).order("id").range(from, to),
+    ),
+  );
+}
+
+export function useBuildLists() {
+  return useSWR<BuildListRow[]>(KEYS.buildLists, () =>
+    fetchAllRows<BuildListRow>((from, to) =>
+      db().from("build_lists").select("*").order("season", { ascending: false }).order("name").order("id").range(from, to),
+    ),
+  );
+}
+
+/** Every line of every build list, in sheet order (migration 0027). */
+export function useBuildListLines() {
+  return useSWR<BuildListLineRow[]>(KEYS.buildListLines, () =>
+    fetchAllRows<BuildListLineRow>((from, to) =>
+      db().from("build_list_lines").select("*").order("build_list_id").order("position").range(from, to),
     ),
   );
 }

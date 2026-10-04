@@ -108,6 +108,10 @@ init-data HMAC verification, schema rewriting) and need no network.
   `import.test.sql`). A `--rehearse` file ends in `raise exception`, so running
   it changes nothing. `public` was imported on 2026-09-14. See
   `docs/data-cleaning.md`.
+- `import-build-lists.ts [--schema public|test] [--rehearse]`: loads the
+  robot sheets of `data/Calibur_AY2627.xlsx` into `build_lists` (0027). This
+  is a plan, not stock. It is re-runnable and replaces that season's lists by
+  name. The rules are in `build-lists/rules.ts`.
 - `import-catalog.ts [csvPath] [outPath]`: the original single-CSV review
   generator, read-only. Superseded by `clean-data/`.
 - `create-admin-user.ts`: creates a Supabase Auth user for `/admin`.
@@ -146,7 +150,8 @@ not being built).
 /store/*          Mini App — runs inside Telegram's web view
                    continuous QR scan → cart → destination → submit
 /admin/*          Dashboard — Supabase email auth (middleware-gated)
-                   review queue, products, units, stocktake, restock, holders
+                   review queue, products, units, stocktake, restock, holders,
+                   build lists
 /api/tg/webhook    Telegram → identity binding (/start)
 /api/store/*       Mini App API — the ONLY thing the Mini App talks to
 ```

@@ -30,6 +30,19 @@ Two things stand between here and real use, and neither is code:
 
 ---
 
+## Build lists (2026-10-04)
+
+Migration `0027_build_lists.sql` is applied to both schemas.
+
+- The AY26/27 build budget (`data/Calibur_AY2627.xlsx`) is loaded into `public` and `test` as
+  `build_lists` / `build_list_lines`: 4 robots and 187 lines. These are a plan, not stock. The
+  ledger is untouched.
+- Staff view it at `/admin/builds` (read-only). Linked lines show the store quantity,
+  amber when short.
+- The import is `scripts/import-build-lists.ts`. Details and judgement calls are in
+  [../data-cleaning.md](../data-cleaning.md), "Build lists".
+- Not built yet: editing lines in the dashboard, and tracking purchase requests.
+
 ## Admin redesign (2026-10-01)
 
 The `/admin` dashboard was rebuilt for fewer clicks and less noise. No schema

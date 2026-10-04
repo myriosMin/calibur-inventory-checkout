@@ -91,6 +91,118 @@ export type Database = {
           },
         ]
       }
+      build_list_lines: {
+        Row: {
+          build_list_id: string
+          category: string | null
+          created_at: string
+          id: string
+          notes: string | null
+          part_name: string
+          position: number
+          product_id: string | null
+          qty: number | null
+          section: string | null
+          source_row: number | null
+          source_text: string | null
+          sourcing: string
+          supplier: string | null
+          supplier_url: string | null
+          unit_price_sgd: number | null
+          updated_at: string
+        }
+        Insert: {
+          build_list_id: string
+          category?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          part_name: string
+          position: number
+          product_id?: string | null
+          qty?: number | null
+          section?: string | null
+          source_row?: number | null
+          source_text?: string | null
+          sourcing?: string
+          supplier?: string | null
+          supplier_url?: string | null
+          unit_price_sgd?: number | null
+          updated_at?: string
+        }
+        Update: {
+          build_list_id?: string
+          category?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          part_name?: string
+          position?: number
+          product_id?: string | null
+          qty?: number | null
+          section?: string | null
+          source_row?: number | null
+          source_text?: string | null
+          sourcing?: string
+          supplier?: string | null
+          supplier_url?: string | null
+          unit_price_sgd?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "build_list_lines_build_list_id_fkey"
+            columns: ["build_list_id"]
+            isOneToOne: false
+            referencedRelation: "build_lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "build_list_lines_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "build_list_lines_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "stock_summary"
+            referencedColumns: ["product_id"]
+          },
+        ]
+      }
+      build_lists: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          notes: string | null
+          season: string
+          source: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          notes?: string | null
+          season: string
+          source?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          notes?: string | null
+          season?: string
+          source?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       holders: {
         Row: {
           active: boolean

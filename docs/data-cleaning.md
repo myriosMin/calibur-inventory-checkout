@@ -292,6 +292,57 @@ Notes:
   Auth email equals `members.nus_email`.
 - **One imported loan is already overdue** (a PM02 out since 7 Aug 2026).
 
+## Build lists (AY26/27, loaded 2026-10-04)
+
+`data/Calibur_AY2627.xlsx` is the season's **build budget**, not a stock
+count: per robot, the parts to buy, with unit price, quantity and a supplier
+link. It went in as a plan (migration 0027), not into the ledger.
+
+- **Loaded:** the four robot sheets ("2627 Hero", "2627 Double Yaw Standard",
+  "2627 Double Yaw Sentry", "Aim bot Trainer"). That is 4 build lists and
+  187 lines. 61 lines link to a store product, 49 come from the referee kit,
+  and the estimated cost is S$16,800.43.
+- **Skipped:**
+  - The "IRL" sheets: NUS purchase-request forms that hold members' student
+    IDs and phone numbers, and re-total the robot sheets.
+  - The CF / Alu / DarkNUS fabrication cut lists (decided 2026-10-04).
+  - "Example" and "Template".
+- **Cleaning** (`scripts/build-lists/rules.ts`, unit-tested):
+  - "Ref Sys" in the price column means the referee kit supplies the part,
+    so it has no price.
+  - Chassis / Gimbal / Referee heading rows become the line's `section`.
+  - Taobao and Tmall links are cut down to `id` and `skuId`, which drops the
+    buyer's share and tracking tokens.
+  - The slip-ring rows get readable names. "Amor" → "Armor".
+  - On the Standard sheet, the first of two "Rail Steel" rows is the carriage.
+- **Product links** are an explicit map, so only unambiguous matches link.
+  These stay unlinked on purpose:
+  - ESC centre board (board 1 or 2?)
+  - DJI Battery (TB47S or TB48S?)
+  - VTM Transmitter (VT02 or VT03?)
+  - Supercap bank (new or old?)
+  - XT30 cables (long or short?)
+- **Not read:** column J of the Sentry sheet, which repeats the quantity, and
+  the scratch column A.
+- **The sheet's own totals:** Aimbot matches (S$486.85). Sentry comes to
+  S$55 more than the sheet, because the sheet leaves the H30 IMU out of its
+  sum. Seven placeholder rows (Alu/CF/GF, no part name) are skipped with a
+  warning.
+
+Staff see the lists at `/admin/builds`, with each linked line's current store
+quantity. Re-running the import replaces the season's lists by name and
+touches nothing else:
+
+```bash
+npx tsx scripts/migrate.ts --schema public    # and --schema test
+npx tsx scripts/import-build-lists.ts --rehearse && supabase db query --linked -f data/clean/build-lists.rehearse.sql
+npx tsx scripts/import-build-lists.ts && supabase db query --linked -f data/clean/build-lists.sql
+npx tsx scripts/import-build-lists.ts --schema test && supabase db query --linked -f data/clean/build-lists.test.sql
+```
+
+RLS: `scripts/sql/rehearse-0027-rls.sql`. It passes on both schemas: staff
+read and write, members see nothing, and anon is refused.
+
 ## Open questions
 
 - Which critical items are actually borrowed from other departments or clubs?
@@ -302,4 +353,9 @@ Notes:
 - What is the "UV charger", who or what is "Hopps", and should the four DarkSTDs
   be one holder or four?
 - Should the procurement backlog (`bom_lines.csv`) live in the dashboard too?
+  It could now go in as a build list.
+- Should the IRL purchase requests be tracked (requested / ordered / arrived)
+  against the build lists? Hero's request already differs from its sheet: it
+  drops the UWB and AM12, and asks for DM4310 V1.2 where the sheet lists a
+  J4310P and a V1.1.
 - Should critical items eventually be scanned per unit rather than per product?

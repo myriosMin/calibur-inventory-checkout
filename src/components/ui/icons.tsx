@@ -164,6 +164,15 @@ export function IconBox(props: IconProps) {
   );
 }
 
+export function IconList(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <rect x="4.5" y="4.5" width="15" height="15" rx="1.5" />
+      <path d="M8 9h8M8 12h8M8 15h5" />
+    </svg>
+  );
+}
+
 export function IconLayers(props: IconProps) {
   return (
     <svg {...base(props)}>
