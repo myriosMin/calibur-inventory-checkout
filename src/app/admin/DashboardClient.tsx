@@ -37,6 +37,7 @@ import {
 import { computeLabelHealth, needsAttention } from "@/lib/reports/label-health";
 import { fetchEntriesSince, fetchScanMissesSince, fetchSessionsSince } from "@/lib/reports/queries";
 import { classifyStockLevels } from "@/lib/reports/stock";
+import { needsPrice } from "@/lib/expensive";
 import { getBrowserClient } from "@/lib/supabase/browser";
 
 import { runExport, type ExportKind } from "./dashboard-export";
@@ -122,6 +123,14 @@ export default function DashboardClient() {
   const missGroups = useMemo(() => summariseScanMisses(missesQ.data ?? []), [missesQ.data]);
   const stock = useMemo(() => classifyStockLevels(levelsQ.data ?? []), [levelsQ.data]);
   const productsOut = useMemo(() => (levelsQ.data ?? []).filter((row) => row.qtyOut > 0), [levelsQ.data]);
+  const expensiveOut = productsOut.filter((row) => row.expensive).length;
+  // Reusable kit with no price: whether it is expensive (0028) is unknown.
+  const unpricedReusable = useMemo(
+    () =>
+      (productsQ.data ?? []).filter((p) => needsPrice({ unitCostSgd: p.unit_cost_sgd, criticality: p.criticality, active: p.active }))
+        .length,
+    [productsQ.data],
+  );
   const reportProducts = useMemo(() => toReportProducts(productsQ.data ?? []), [productsQ.data]);
 
   const labelProblems = useMemo(() => {
@@ -162,8 +171,16 @@ export default function DashboardClient() {
 
   const bindQueue = badgesQ.data?.bindQueue ?? 0;
   const openReview = badgesQ.data?.openReview ?? 0;
+  const openReviewExpensive = badgesQ.data?.openReviewExpensive ?? 0;
 
   const attention = [
+    {
+      key: "expensive-review",
+      count: openReviewExpensive,
+      label: `open ${openReviewExpensive === 1 ? "question" : "questions"} about expensive items: settle these first`,
+      href: "/admin/review?priority=high",
+      tone: "danger" as const,
+    },
     {
       key: "bind",
       count: bindQueue,
@@ -192,8 +209,16 @@ export default function DashboardClient() {
       href: "/admin/scan-codes",
       tone: "warning" as const,
     },
+    {
+      key: "needs-price",
+      count: unpricedReusable,
+      label: `reusable ${unpricedReusable === 1 ? "item has" : "items have"} no price, so nobody can tell if ${unpricedReusable === 1 ? "it is" : "they are"} expensive (S$20+)`,
+      href: "/admin/products?expense=needs_price",
+      tone: "warning" as const,
+    },
   ];
-  const attentionLoading = badgesQ.isLoading || levelsQ.isLoading || entriesQ.isLoading || missesQ.isLoading;
+  const attentionLoading =
+    badgesQ.isLoading || levelsQ.isLoading || entriesQ.isLoading || missesQ.isLoading || productsQ.isLoading;
   const attentionItems = attention.filter((item) => item.count > 0);
 
   const handleExport = async (kind: ExportKind) => {
@@ -241,11 +266,17 @@ export default function DashboardClient() {
       {/* KPIs: four numbers, coloured only when they need someone. */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
-          label="Open review items"
-          value={openReview}
-          tone={openReview > 0 ? "warning" : undefined}
-          hint={openReview > 0 ? "Catalog questions to settle" : "Nothing to review"}
-          href="/admin/review"
+          label="Expensive-item questions"
+          value={openReviewExpensive}
+          tone={openReviewExpensive > 0 ? "danger" : undefined}
+          hint={
+            openReviewExpensive > 0
+              ? `Settle first · ${openReview} open in total`
+              : openReview > 0
+                ? `${openReview} other open, lower priority`
+                : "Nothing to review"
+          }
+          href={openReviewExpensive > 0 ? "/admin/review?priority=high" : "/admin/review"}
           loading={badgesQ.isLoading}
         />
         <StatCard
@@ -259,8 +290,8 @@ export default function DashboardClient() {
         <StatCard
           label="Parts out"
           value={productsOut.length}
-          hint="Products with stock outside the store"
-          href="/admin/holdings"
+          hint={expensiveOut > 0 ? `${expensiveOut} of them expensive` : "Products with stock outside the store"}
+          href={expensiveOut > 0 ? "/admin/holdings?expensive=1" : "/admin/holdings"}
           loading={levelsQ.isLoading}
         />
         <StatCard

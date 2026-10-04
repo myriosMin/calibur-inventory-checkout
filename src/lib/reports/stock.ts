@@ -24,6 +24,10 @@ export interface StockLevelRow {
   minStock: number | null;
   qtyInStore: number;
   qtyOut: number;
+  /** products.unit_cost_sgd; null = not priced. */
+  unitCostSgd?: number | null;
+  /** products.expensive (0028): S$20+, or critical with no price. */
+  expensive?: boolean;
 }
 
 export type StockFlag = "negative" | "low" | "ok";

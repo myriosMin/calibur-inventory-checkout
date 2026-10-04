@@ -24,7 +24,7 @@ export type NavIcon =
   | "holders";
 
 /** Which count from useNavBadges() an entry shows. */
-export type NavBadge = "openReview" | "bindQueue";
+export type NavBadge = "openReview" | "openReviewExpensive" | "bindQueue";
 
 export interface NavTab {
   href: string;
@@ -54,7 +54,8 @@ export const NAV_GROUPS: NavGroup[] = [
     label: null,
     items: [
       { href: "/admin", label: "Dashboard", icon: "dashboard" },
-      { href: "/admin/review", label: "Review", icon: "review", badge: "openReview" },
+      // Counts only the questions about expensive items: those are settled first.
+      { href: "/admin/review", label: "Review", icon: "review", badge: "openReviewExpensive" },
     ],
   },
   {

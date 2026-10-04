@@ -46,6 +46,15 @@ describe("buildOverdueNudgeText", () => {
     expect(single).toContain("3 weeks");
   });
 
+  it("says when a part is an expensive item (0028)", () => {
+    expect(single).not.toContain("expensive");
+    const expensive = buildOverdueNudgeText({
+      memberName: "Alex",
+      items: [{ productName: "Livox LiDAR", qty: 1, unit: "pcs", daysOut: 21, expensive: true }],
+    });
+    expect(expensive).toContain("- Livox LiDAR x1 pcs — 3 weeks (expensive item)");
+  });
+
   it("offers a way out rather than making a demand", () => {
     expect(single).toContain("Still using it? Nothing to do.");
   });
@@ -147,6 +156,33 @@ describe("buildWeeklyDigestText", () => {
     });
     expect(quiet).toContain("Out of the store: none");
     expect(quiet).toContain("Low stock: none");
+  });
+
+  it("leads with every expensive item a member holds, when given", () => {
+    const text = buildWeeklyDigestText({
+      date: "2026-10-04",
+      outstanding: [],
+      lowStock: [],
+      negative: [],
+      overdue: [],
+      expensiveWithMembers: [
+        { memberName: "Alex", productName: "NVIDIA Jetson AGX Orin", qty: 1, unit: "pcs", daysOut: 3 },
+      ],
+      sectionLimit: 15,
+    });
+    expect(text.split("\n\n")[1]).toBe("Expensive items with members (1):\n- NVIDIA Jetson AGX Orin x1 pcs — Alex, 3 days");
+    const none = buildWeeklyDigestText({
+      date: "2026-10-04",
+      outstanding: [],
+      lowStock: [],
+      negative: [],
+      overdue: [],
+      expensiveWithMembers: [],
+      sectionLimit: 15,
+    });
+    expect(none).toContain("Expensive items with members: none");
+    // Callers that don't pass it get no section at all.
+    expect(full).not.toContain("Expensive items with members");
   });
 
   it("omits the below-zero section entirely when there is nothing below zero", () => {

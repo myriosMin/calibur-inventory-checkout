@@ -5,6 +5,7 @@ import {
   expectedProductNames,
   normalizeCategory,
   parseBuildSheet,
+  productPrices,
   type SheetRow,
   splitSupplier,
 } from "../../scripts/build-lists/rules";
@@ -85,6 +86,24 @@ describe("parseBuildSheet", () => {
   });
 });
 
+describe("productPrices", () => {
+  it("takes the highest bought price per product, and prices ambiguous lines' candidates", () => {
+    const hero = parseBuildSheet("2627 Hero", [
+      HEADER,
+      row(5, "Electronics", "ESC centre board", "40", "2", "80"),
+      row(9, "Motor", "DM-J4310P-2EC", "155.28", "1", "155.28"),
+      row(23, "Motor", "DM-J4310-2EC V1.1 （24V）", "118.66", "1", "118.66"),
+      row(54, "Referee", "Power Management Module", "Ref Sys", "1", "Ref Sys"),
+      row(40, "Other", "Hinge", "0.5", "6", "3"),
+    ]);
+    expect(productPrices([{ name: "Hero", lines: hero.lines }])).toEqual([
+      { productName: "Damiao DM4310 motor", unitPriceSgd: 155.28, from: "Hero!9" },
+      { productName: "ESC center board 1", unitPriceSgd: 40, from: "Hero!5" },
+      { productName: "ESC center board 2", unitPriceSgd: 40, from: "Hero!5" },
+    ]);
+  });
+});
+
 describe("suppliers", () => {
   it("strips Taobao and Tmall tracking down to the listing and variant", () => {
     expect(
@@ -139,6 +158,9 @@ describe("buildSql", () => {
     expect(sql).toContain("delete from build_lists where season = 'AY2627' and name in ('Hero');");
     expect(sql).toContain("(select id from products where name = 'DJI C620 ESC')");
     expect(sql).not.toMatch(/stock_movements|review_items/);
+    // Prices fill gaps only; a price set on the product page wins.
+    expect(sql).toContain("update products set unit_cost_sgd = 80 where name = 'DJI C620 ESC' and unit_cost_sgd is null;");
+    expect(sql).toContain("migration 0028 is not applied");
     expect(sql.trimEnd().endsWith("commit;")).toBe(true);
   });
 

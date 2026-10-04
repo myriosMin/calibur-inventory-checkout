@@ -1,3 +1,4 @@
+import { EXPENSIVE_THRESHOLD_SGD, expenseBasis, type ExpenseBasis, isExpensive } from "@/lib/expensive";
 import type { Database } from "@/lib/types/database";
 
 /**
@@ -103,16 +104,44 @@ export function productToForm(product: Product): ProductFormState {
 export function criticalityDefaults(
   criticality: Criticality,
   tier: Tier,
+  unitCostSgd = "",
 ): Pick<ProductFormState, "criticality" | "tier" | "returnable"> {
   if (criticality === "expendable") {
-    return { criticality, tier: tier === "loose" ? "loose" : "bulk", returnable: false };
+    // An expendable that costs S$20+ is still expensive (0028): it stays
+    // returnable, so the checkout lends it instead of writing it off.
+    const returnable = isExpensive({ unitCostSgd: parseCost(unitCostSgd), criticality });
+    return { criticality, tier: tier === "loose" ? "loose" : "bulk", returnable };
   }
   return { criticality, tier: "asset", returnable: true };
 }
 
+/** The unit cost box as a number, or null when empty or not a number. */
+function parseCost(raw: string): number | null {
+  if (!raw.trim()) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** What the form's current price and criticality make of the product (0028). */
+export function formExpenseBasis(form: Pick<ProductFormState, "unit_cost_sgd" | "criticality">): ExpenseBasis {
+  return expenseBasis({ unitCostSgd: parseCost(form.unit_cost_sgd), criticality: form.criticality });
+}
+
+/**
+ * Typing a price of S$20 or more makes the product expensive, and an
+ * expensive product must be returnable (products_expensive_returnable), so
+ * the form switches returnable on rather than letting the save fail.
+ */
+export function unitCostPatch(
+  raw: string,
+  criticality: Criticality,
+): Pick<ProductFormState, "unit_cost_sgd"> & Partial<Pick<ProductFormState, "returnable">> {
+  return isExpensive({ unitCostSgd: parseCost(raw), criticality }) ? { unit_cost_sgd: raw, returnable: true } : { unit_cost_sgd: raw };
+}
+
 export type ProductWrite = Omit<
   Database["public"]["Tables"]["products"]["Insert"],
-  "id" | "created_at" | "updated_at" | "legacy_ref" | "legacy_row"
+  "id" | "created_at" | "updated_at" | "legacy_ref" | "legacy_row" | "expensive"
 >;
 
 export type FormToRowResult = { ok: true; row: ProductWrite } | { ok: false; error: string };
@@ -150,6 +179,16 @@ export function formToRow(form: ProductFormState): FormToRowResult {
       return { ok: false, error: "Unit cost must be a number, 0 or more." };
     }
     unitCost = Math.round(parsed * 100) / 100;
+  }
+
+  if (!form.returnable && isExpensive({ unitCostSgd: unitCost, criticality: form.criticality })) {
+    return {
+      ok: false,
+      error:
+        unitCost !== null
+          ? `At S$${unitCost.toFixed(2)} this is an expensive item (S$${EXPENSIVE_THRESHOLD_SGD}+), so it must be returnable: it is lent and tracked, never consumed at checkout.`
+          : "Critical items with no price are treated as expensive, so they must be returnable.",
+    };
   }
 
   const owned = form.ownership === "owned";

@@ -8,7 +8,7 @@ import {
   buildWeeklyDigestMessages,
   type OverdueItem,
 } from "@/lib/reports/messages";
-import { dueForNudge, outstandingLots, selectOverdue } from "@/lib/reports/overdue";
+import { daysBetween, dueForNudge, outstandingLots, selectOverdue } from "@/lib/reports/overdue";
 import {
   fetchBorrowerHolders,
   fetchHolderLedger,
@@ -166,6 +166,7 @@ export async function GET(request: Request) {
       qty: lot.qty,
       unit: product.unit,
       daysOut: lot.daysOut,
+      expensive: product.expensive === true,
     });
     byMember.set(borrower.memberId, entry);
   }
@@ -253,8 +254,28 @@ export async function GET(request: Request) {
   let digestFailed = 0;
 
   if (digestDue && canAlert) {
+    // Every expensive item (0028) out with a member, however recent: the
+    // club accounts for these weekly, not only once they pass the threshold.
+    const expensiveWithMembers = lots
+      .flatMap((lot) => {
+        const borrower = borrowerByHolderId.get(lot.holderId);
+        const product = productById.get(lot.productId);
+        if (!borrower || !product || product.expensive !== true) return [];
+        return [
+          {
+            memberName: borrower.memberName,
+            productName: product.name,
+            qty: lot.qty,
+            unit: product.unit,
+            daysOut: Math.max(0, daysBetween(lot.since, now)),
+          },
+        ];
+      })
+      .sort((a, b) => b.daysOut - a.daysOut || a.productName.localeCompare(b.productName));
+
     const messages = buildWeeklyDigestMessages({
       date: dateInZone(now),
+      expensiveWithMembers,
       outstanding: levels
         .filter((row) => row.qtyOut > 0)
         .sort((a, b) => b.qtyOut - a.qtyOut || a.name.localeCompare(b.name))

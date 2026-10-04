@@ -56,6 +56,8 @@ interface CatalogProduct {
   unit: string;
   qtyInStore: number;
   locationId: string | null;
+  /** products.expensive (0028): counted first, and a shortfall shows red. */
+  expensive: boolean;
 }
 
 interface WalkProduct {
@@ -63,6 +65,12 @@ interface WalkProduct {
   name: string;
   unit: string;
   expectedQty: number;
+  expensive: boolean;
+}
+
+/** Expensive items first, so they are counted while attention is fresh. */
+function byExpenseThenName(a: WalkProduct, b: WalkProduct): number {
+  return Number(b.expensive) - Number(a.expensive) || a.name.localeCompare(b.name);
 }
 
 interface LocationOption {
@@ -85,6 +93,7 @@ interface CommitReceiptLine {
   expectedQty: number;
   variance: number;
   hadMovement: boolean;
+  expensive: boolean;
 }
 
 interface CommitReceipt {
@@ -141,7 +150,7 @@ export default function AdminStocktakePage() {
         fetchAllRows((from, to) =>
           supabase
             .from("stock_summary")
-            .select("product_id, name, unit, qty_in_store, location_id")
+            .select("product_id, name, unit, qty_in_store, location_id, expensive")
             .order("name")
             .order("product_id")
             .range(from, to),
@@ -185,6 +194,7 @@ export default function AdminStocktakePage() {
             unit: row.unit ?? "pcs",
             qtyInStore: row.qty_in_store ?? 0,
             locationId: row.location_id,
+            expensive: row.expensive === true,
           })),
       );
       setRobots(robotList);
@@ -257,13 +267,16 @@ export default function AdminStocktakePage() {
       return ids
         .flatMap((id) => {
           const product = catalogById.get(id);
-          return product ? [{ id, name: product.name, unit: product.unit, expectedQty: held.get(id) ?? 0 }] : [];
+          return product
+            ? [{ id, name: product.name, unit: product.unit, expectedQty: held.get(id) ?? 0, expensive: product.expensive }]
+            : [];
         })
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .sort(byExpenseThenName);
     }
     return catalog
       .filter((p) => p.locationId === walk.locationId)
-      .map((p) => ({ id: p.id, name: p.name, unit: p.unit, expectedQty: p.qtyInStore }));
+      .map((p) => ({ id: p.id, name: p.name, unit: p.unit, expectedQty: p.qtyInStore, expensive: p.expensive }))
+      .sort(byExpenseThenName);
   }, [walk, catalog, catalogById, robotHoldings]);
 
   const visibleProducts = useMemo<WalkProduct[]>(() => {
@@ -394,6 +407,7 @@ export default function AdminStocktakePage() {
       expectedQty: row.expected_qty,
       variance: row.counted_qty - row.expected_qty,
       hadMovement: row.movement_id !== null,
+      expensive: catalogById.get(row.product_id)?.expensive ?? false,
     }));
     lines.sort(
       (a, b) => Math.abs(b.variance) - Math.abs(a.variance) || a.productName.localeCompare(b.productName),
@@ -456,10 +470,13 @@ export default function AdminStocktakePage() {
                   className="flex items-center justify-between gap-3 rounded-lg bg-neutral-950 px-3 py-2"
                 >
                   <span className="min-w-0 flex-1 truncate text-sm text-neutral-100">{line.productName}</span>
+                  {line.expensive ? <StatusPill tone="warning">expensive</StatusPill> : null}
                   <span className="text-xs text-neutral-400 tabular-nums">
                     counted {line.countedQty} · ledger said {line.expectedQty}
                   </span>
-                  <StatusPill tone="warning">{formatVariance(line.variance)}</StatusPill>
+                  <StatusPill tone={line.expensive && line.variance < 0 ? "danger" : "warning"}>
+                    {formatVariance(line.variance)}
+                  </StatusPill>
                 </li>
               ))}
             </ul>
@@ -651,13 +668,16 @@ export default function AdminStocktakePage() {
                     <p className="truncate text-sm font-medium text-neutral-100">{product.name}</p>
                     <p className="text-xs text-neutral-400 tabular-nums">
                       Ledger says {product.expectedQty} {product.unit}
+                      {product.expensive ? <span className="ml-2 text-amber-300">expensive</span> : null}
                     </p>
                   </div>
                   <div className="w-12 shrink-0 text-right">
                     {direction === "match" ? (
                       <IconCheck size={16} className="ml-auto text-neutral-500" aria-label="Matches the ledger" />
                     ) : direction ? (
-                      <StatusPill tone="warning">{formatVariance(variance!)}</StatusPill>
+                      <StatusPill tone={product.expensive && variance! < 0 ? "danger" : "warning"}>
+                        {formatVariance(variance!)}
+                      </StatusPill>
                     ) : !parsed.ok && parsed.reason !== "empty" ? (
                       <span className="text-xs text-amber-400">check</span>
                     ) : null}

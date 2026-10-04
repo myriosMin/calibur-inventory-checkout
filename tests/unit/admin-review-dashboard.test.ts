@@ -5,10 +5,28 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { NAV_GROUPS, NAV_ITEMS, activeTabHref, isActive, navItemFor, visibleNavGroups } from "@/app/admin/nav";
-import { criticalityDefaults, EMPTY_PRODUCT_FORM, formToRow } from "@/app/admin/products/product-form";
-import { DEFAULT_PRODUCT_FILTERS, filterProducts, stockBucket, type ProductListRow } from "@/app/admin/products/product-list";
+import {
+  criticalityDefaults,
+  EMPTY_PRODUCT_FORM,
+  formExpenseBasis,
+  formToRow,
+  unitCostPatch,
+} from "@/app/admin/products/product-form";
+import {
+  DEFAULT_PRODUCT_FILTERS,
+  filterProducts,
+  stockBucket,
+  type ProductListFilters,
+  type ProductListRow,
+} from "@/app/admin/products/product-list";
 import { EMPTY_UNIT_FORM, unitFormToRow } from "@/app/admin/products/[id]/unit-form";
-import { DEFAULT_REVIEW_FILTERS, filterReviewItems, openCountsBySeverity } from "@/app/admin/review/review-filters";
+import {
+  DEFAULT_REVIEW_FILTERS,
+  expensiveIds,
+  filterReviewItems,
+  openCountsByPriority,
+  openCountsBySeverity,
+} from "@/app/admin/review/review-filters";
 import { addWalkProduct, deserializeWalk, newWalk, serializeWalk } from "@/app/admin/stocktake/walk";
 import { fetchAllRows } from "@/lib/supabase/fetch-all";
 
@@ -91,8 +109,24 @@ describe("product form", () => {
     expect(formToRow({ ...valid, name: "  " })).toEqual({ ok: false, error: "Name is required." });
     expect(formToRow({ ...valid, min_stock: "2.5" }).ok).toBe(false);
     expect(formToRow({ ...valid, unit_cost_sgd: "-1" }).ok).toBe(false);
-    const result = formToRow({ ...valid, unit_cost_sgd: "149.999" });
+    const result = formToRow({ ...valid, unit_cost_sgd: "149.999", returnable: true });
     expect(result.ok && result.row.unit_cost_sgd).toBe(150);
+  });
+
+  it("refuses an expensive item that is not returnable, as products_expensive_returnable would (0028)", () => {
+    const priced = formToRow({ ...valid, unit_cost_sgd: "20", returnable: false });
+    expect(priced.ok).toBe(false);
+    expect(!priced.ok && priced.error).toMatch(/must be returnable/);
+    expect(formToRow({ ...valid, unit_cost_sgd: "19.99", returnable: false }).ok).toBe(true);
+    expect(formToRow({ ...valid, criticality: "critical", returnable: false }).ok).toBe(false);
+    expect(formToRow({ ...valid, criticality: "critical", unit_cost_sgd: "5", returnable: false }).ok).toBe(true);
+  });
+
+  it("switches returnable on when a price makes the item expensive", () => {
+    expect(unitCostPatch("25", "expendable")).toEqual({ unit_cost_sgd: "25", returnable: true });
+    expect(unitCostPatch("2", "expendable")).toEqual({ unit_cost_sgd: "2" });
+    expect(formExpenseBasis({ unit_cost_sgd: "", criticality: "critical" })).toBe("assumed");
+    expect(formExpenseBasis({ unit_cost_sgd: "abc", criticality: "standard" })).toBe("unpriced");
   });
 
   it("requires a lender for on-loan stock and clears it when switched back to owned", () => {
@@ -107,6 +141,8 @@ describe("product form", () => {
     expect(criticalityDefaults("critical", "bulk")).toEqual({ criticality: "critical", tier: "asset", returnable: true });
     expect(criticalityDefaults("expendable", "asset")).toEqual({ criticality: "expendable", tier: "bulk", returnable: false });
     expect(criticalityDefaults("expendable", "loose").tier).toBe("loose");
+    // An S$30 expendable is still expensive, so it stays returnable.
+    expect(criticalityDefaults("expendable", "asset", "30").returnable).toBe(true);
   });
 });
 
@@ -135,16 +171,33 @@ describe("product list filters", () => {
     expect(filterProducts(rows, { ...DEFAULT_PRODUCT_FILTERS, query: "0710" }).map((r) => r.id)).toEqual(["2"]);
     expect(filterProducts(rows, DEFAULT_PRODUCT_FILTERS).map((r) => r.id)).toEqual(["2", "3", "1"]);
   });
+
+  it("filters by the expensive flag (0028), and finds active reusable kit with no price", () => {
+    const priced = [
+      row({ id: "a", name: "A motor", criticality: "critical", expensive: true, unit_cost_sgd: null }),
+      row({ id: "b", name: "B board", criticality: "standard", expensive: true, unit_cost_sgd: 40 }),
+      row({ id: "c", name: "C tool", criticality: "standard", expensive: false, unit_cost_sgd: null }),
+      row({ id: "d", name: "D held tool", criticality: "standard", expensive: false, unit_cost_sgd: null, active: false }),
+      row({ id: "e", name: "E resistor", criticality: "expendable", expensive: false, unit_cost_sgd: null }),
+    ];
+    const ids = (expense: ProductListFilters["expense"]) =>
+      filterProducts(priced, { ...DEFAULT_PRODUCT_FILTERS, expense }).map((r) => r.id);
+    expect(ids("expensive")).toEqual(["a", "b"]);
+    expect(ids("not_expensive")).toEqual(["c", "d", "e"]);
+    expect(ids("needs_price")).toEqual(["c"]);
+  });
 });
 
 describe("review queue filters", () => {
-  const item = (id: number, severity: string, status = "open") => ({
+  const item = (id: number, severity: string, status = "open", productId: string | null = null, aboutExpensive = false) => ({
     id,
     severity,
     status,
     entity: "product",
     subject: `s${id}`,
     issue: "totals disagree",
+    product_id: productId,
+    about_expensive: aboutExpensive,
   });
 
   it("puts blockers first and hides closed items by default", () => {
@@ -152,6 +205,25 @@ describe("review queue filters", () => {
     expect(filterReviewItems(items, DEFAULT_REVIEW_FILTERS).map((i) => i.id)).toEqual([3, 2, 1]);
     expect(filterReviewItems(items, { ...DEFAULT_REVIEW_FILTERS, status: "closed" }).map((i) => i.id)).toEqual([4]);
     expect(openCountsBySeverity(items)).toEqual({ blocker: 1, check: 1, info: 1 });
+  });
+
+  it("puts items about expensive products (or marked as such) ahead of any severity", () => {
+    const expensive = expensiveIds([
+      { id: "gm6020", expensive: true },
+      { id: "resistor", expensive: false },
+      { id: "unknown", expensive: null },
+    ]);
+    const items = [
+      item(1, "blocker", "open", "resistor"),
+      item(2, "info", "open", "gm6020"),
+      item(3, "check", "open", null, true),
+      item(4, "check", "resolved", "gm6020"),
+      item(5, "check"),
+    ];
+    expect(filterReviewItems(items, DEFAULT_REVIEW_FILTERS, expensive).map((i) => i.id)).toEqual([3, 2, 1, 5]);
+    expect(filterReviewItems(items, { ...DEFAULT_REVIEW_FILTERS, priority: "high" }, expensive).map((i) => i.id)).toEqual([3, 2]);
+    expect(filterReviewItems(items, { ...DEFAULT_REVIEW_FILTERS, priority: "normal" }, expensive).map((i) => i.id)).toEqual([1, 5]);
+    expect(openCountsByPriority(items, expensive)).toEqual({ high: 2, normal: 2 });
   });
 });
 

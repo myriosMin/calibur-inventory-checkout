@@ -10,8 +10,10 @@
  *
  *   supabase db query --linked -f data/clean/build-lists.sql
  *
- * Re-runnable: it replaces the season's build lists by name, and touches
- * nothing else -- no products, no stock, no review items.
+ * Re-runnable: it replaces the season's build lists by name, and fills in
+ * `products.unit_cost_sgd` where a linked product has no price yet (which
+ * is what decides `products.expensive`, migration 0028). Nothing else: no
+ * stock, no review items, and never a price someone already set.
  *
  * This script never connects to a database.
  */
@@ -29,6 +31,7 @@ import {
   type BuildLine,
   expectedProductNames,
   parseBuildSheet,
+  productPrices,
   SEASON,
   type SheetRow,
   WORKBOOK,
@@ -84,6 +87,10 @@ export function buildSql(plans: BuildListPlan[], options: { schema: "public" | "
     `  if to_regclass('${schema}.build_list_lines') is null then`,
     `    raise exception 'migration 0027 is not applied to the ${schema} schema';`,
     "  end if;",
+    "  if not exists (select 1 from information_schema.columns",
+    `                  where table_schema = '${schema}' and table_name = 'products' and column_name = 'expensive') then`,
+    `    raise exception 'migration 0028 is not applied to the ${schema} schema';`,
+    "  end if;",
     "  -- Every product the rules link to must exist exactly once, by name.",
     "  select string_agg(n, ', ') into v_missing",
     `  from unnest(array[${products}]::text[]) n`,
@@ -130,13 +137,29 @@ export function buildSql(plans: BuildListPlan[], options: { schema: "public" | "
     );
   }
 
+  // Prices for the store products these lines are. Only where a product has
+  // none: a price staff typed on the product page always wins. This is what
+  // makes a product "expensive" (0028), so it can flip `expensive` on, and
+  // products_expensive_returnable then refuses it unless it is returnable.
+  const prices = productPrices(plans);
+  if (prices.length) {
+    sql.push("", "-- Unit prices for products that have none (products.expensive follows, 0028).");
+    for (const price of prices) {
+      sql.push(
+        `update products set unit_cost_sgd = ${price.unitPriceSgd} where name = ${sqlText(price.productName)} and unit_cost_sgd is null; -- ${price.from}`,
+      );
+    }
+  }
+
   const report = [
-    "  select format('build_lists=%s lines=%s linked_to_product=%s referee_kit=%s est_cost_sgd=%s',",
+    "  select format('build_lists=%s lines=%s linked_to_product=%s referee_kit=%s est_cost_sgd=%s priced_products=%s expensive_products=%s',",
     `    (select count(*) from build_lists where season = ${sqlText(SEASON)}),`,
     `    (select count(*) from build_list_lines l join build_lists b on b.id = l.build_list_id where b.season = ${sqlText(SEASON)}),`,
     `    (select count(*) from build_list_lines l join build_lists b on b.id = l.build_list_id where b.season = ${sqlText(SEASON)} and l.product_id is not null),`,
     `    (select count(*) from build_list_lines l join build_lists b on b.id = l.build_list_id where b.season = ${sqlText(SEASON)} and l.sourcing = 'referee_kit'),`,
-    `    (select coalesce(sum(l.qty * l.unit_price_sgd), 0) from build_list_lines l join build_lists b on b.id = l.build_list_id where b.season = ${sqlText(SEASON)})`,
+    `    (select coalesce(sum(l.qty * l.unit_price_sgd), 0) from build_list_lines l join build_lists b on b.id = l.build_list_id where b.season = ${sqlText(SEASON)}),`,
+    "    (select count(*) from products where unit_cost_sgd is not null),",
+    "    (select count(*) from products where expensive)",
     "  ) into v_report;",
   ];
   sql.push("", "do $$", "declare v_report text;", "begin", ...report);
@@ -169,6 +192,9 @@ if (isMain) {
     for (const warning of warnings) console.warn(`warning: ${warning}`);
     const out = path.join(OUT_DIR, `build-lists${schema === "test" ? ".test" : ""}${rehearse ? ".rehearse" : ""}.sql`);
     writeFileSync(out, buildSql(plans, { schema, rehearse }), "utf-8");
+    for (const price of productPrices(plans)) {
+      console.log(`price  ${price.productName.padEnd(44)} S$${price.unitPriceSgd.toFixed(2)}  (${price.from})`);
+    }
     for (const plan of plans) {
       const linked = plan.lines.filter((l) => l.productName).length;
       const cost = plan.lines.reduce((sum, l) => sum + (l.qty ?? 0) * (l.unitPriceSgd ?? 0), 0);

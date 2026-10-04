@@ -12,6 +12,7 @@ export interface SearchProduct {
   unit: string;
   category?: string | null;
   spec?: Record<string, unknown> | null;
+  expensive?: boolean | null;
 }
 
 export interface SearchSheetProps {

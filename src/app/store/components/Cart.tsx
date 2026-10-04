@@ -9,6 +9,8 @@ export interface CartLineView {
   name: string;
   unit: string;
   qty: number;
+  /** Expensive items (0028) are lent and tracked; the member is told so. */
+  expensive?: boolean;
 }
 
 export interface CartProps {
@@ -86,6 +88,7 @@ export default function Cart({
                 <p className="truncate font-medium text-neutral-100">{line.name}</p>
                 <p className="text-xs text-neutral-400">
                   × {line.qty} {line.unit}
+                  {line.expensive ? <span className="ml-2 text-amber-300">Expensive · bring it back</span> : null}
                 </p>
               </div>
               <Stepper

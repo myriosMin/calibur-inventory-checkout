@@ -55,7 +55,7 @@ export async function fetchStockLevels(client: ReportClient): Promise<StockLevel
   const rows = await all("stock_summary", (from, to) =>
     client
       .from("stock_summary")
-      .select("product_id, name, tier, unit, min_stock, qty_in_store, qty_out")
+      .select("product_id, name, tier, unit, min_stock, qty_in_store, qty_out, unit_cost_sgd, expensive")
       .order("product_id")
       .range(from, to),
   );
@@ -70,6 +70,8 @@ export async function fetchStockLevels(client: ReportClient): Promise<StockLevel
       minStock: row.min_stock,
       qtyInStore: Number(row.qty_in_store ?? 0),
       qtyOut: Number(row.qty_out ?? 0),
+      unitCostSgd: row.unit_cost_sgd,
+      expensive: row.expensive === true,
     }));
 }
 
@@ -224,13 +226,16 @@ export interface ProductRef {
   category: string | null;
   partNumber: string | null;
   active: boolean;
+  unitCostSgd?: number | null;
+  /** products.expensive (0028). */
+  expensive?: boolean;
 }
 
 export async function fetchProducts(client: ReportClient): Promise<ProductRef[]> {
   const rows = await all("products", (from, to) =>
     client
       .from("products")
-      .select("id, name, tier, unit, returnable, min_stock, location_id, category, part_number, active")
+      .select("id, name, tier, unit, returnable, min_stock, location_id, category, part_number, active, unit_cost_sgd, expensive")
       .order("name")
       .order("id")
       .range(from, to),
@@ -247,6 +252,8 @@ export async function fetchProducts(client: ReportClient): Promise<ProductRef[]>
     category: row.category,
     partNumber: row.part_number,
     active: row.active,
+    unitCostSgd: row.unit_cost_sgd,
+    expensive: row.expensive === true,
   }));
 }
 

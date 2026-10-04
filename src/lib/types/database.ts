@@ -427,6 +427,7 @@ export type Database = {
           category: string | null
           created_at: string
           criticality: string
+          expensive: boolean | null
           id: string
           legacy_ref: string | null
           legacy_row: number | null
@@ -451,6 +452,7 @@ export type Database = {
           category?: string | null
           created_at?: string
           criticality?: string
+          expensive?: boolean | null
           id?: string
           legacy_ref?: string | null
           legacy_row?: number | null
@@ -475,6 +477,7 @@ export type Database = {
           category?: string | null
           created_at?: string
           criticality?: string
+          expensive?: boolean | null
           id?: string
           legacy_ref?: string | null
           legacy_row?: number | null
@@ -506,6 +509,7 @@ export type Database = {
       }
       review_items: {
         Row: {
+          about_expensive: boolean
           created_at: string
           entity: string
           id: number
@@ -520,6 +524,7 @@ export type Database = {
           subject: string
         }
         Insert: {
+          about_expensive?: boolean
           created_at?: string
           entity: string
           id?: number
@@ -534,6 +539,7 @@ export type Database = {
           subject: string
         }
         Update: {
+          about_expensive?: boolean
           created_at?: string
           entity?: string
           id?: number
@@ -943,6 +949,7 @@ export type Database = {
       }
       stock_summary: {
         Row: {
+          expensive: boolean | null
           location_id: string | null
           min_stock: number | null
           name: string | null
@@ -952,6 +959,7 @@ export type Database = {
           qty_out: number | null
           tier: string | null
           unit: string | null
+          unit_cost_sgd: number | null
         }
         Relationships: [
           {

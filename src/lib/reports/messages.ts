@@ -17,6 +17,8 @@ export interface OverdueItem {
   qty: number;
   unit: string;
   daysOut: number;
+  /** products.expensive (0028): said in the line, since it is why it matters. */
+  expensive?: boolean;
 }
 
 export interface LowStockItem {
@@ -79,7 +81,10 @@ export function buildOverdueNudgeText(params: {
       : `${memberName}, you have had these out for a while:`;
   const body = items
     .map((item) =>
-      line(`${item.productName} x${item.qty} ${item.unit} — ${formatDuration(item.daysOut)}`),
+      line(
+        `${item.productName} x${item.qty} ${item.unit} — ${formatDuration(item.daysOut)}` +
+          (item.expensive ? " (expensive item)" : ""),
+      ),
     )
     .join("\n");
   return `${heading}\n${body}\n\nStill using it? Nothing to do. Done with it? Return it in the app so someone else can find it.`;
@@ -124,6 +129,12 @@ export interface DigestParams {
   negative: readonly NegativeStockItem[];
   /** Member holdings past the overdue threshold, longest first. */
   overdue: readonly (OverdueItem & { memberName: string })[];
+  /**
+   * Every expensive item (0028) a member holds, however recently taken,
+   * longest first. Robots are left out: a motor on Hero is where it belongs.
+   * Optional so older callers and tests keep working; absent = section omitted.
+   */
+  expensiveWithMembers?: readonly (OverdueItem & { memberName: string })[];
   /** Cap applied to each section by the caller, for the "and N more" line. */
   sectionLimit: number;
 }
@@ -150,9 +161,21 @@ interface DigestSection {
 }
 
 function digestSections(params: DigestParams): DigestSection[] {
-  const { outstanding, lowStock, negative, overdue } = params;
+  const { outstanding, lowStock, negative, overdue, expensiveWithMembers } = params;
 
-  const sections: DigestSection[] = [
+  const sections: DigestSection[] = [];
+  // First, because accounting for expensive items is the club's priority.
+  if (expensiveWithMembers) {
+    sections.push({
+      title: "Expensive items with members",
+      lines: expensiveWithMembers.map(
+        (item) =>
+          `${item.productName} x${item.qty} ${item.unit} — ${item.memberName}, ${formatDuration(item.daysOut)}`,
+      ),
+      total: expensiveWithMembers.length,
+    });
+  }
+  sections.push(
     {
       title: "Out of the store",
       lines: outstanding.map((item) => `${item.name} x${item.qtyOut} ${item.unit}`),
@@ -175,7 +198,7 @@ function digestSections(params: DigestParams): DigestSection[] {
       ),
       total: lowStock.length,
     },
-  ];
+  );
 
   // Only shown when there is something to say: a zero here is the normal,
   // healthy state and a standing "Negative balances: none" line would train

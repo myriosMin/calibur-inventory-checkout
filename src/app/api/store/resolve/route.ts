@@ -111,7 +111,7 @@ export async function POST(request: Request) {
 
     const { data: product, error: productError } = await supabase
       .from("products")
-      .select("id, name, tier, unit, category, spec, returnable, active")
+      .select("id, name, tier, unit, category, spec, returnable, active, expensive")
       .eq("id", scanCode.product_id)
       .maybeSingle();
     if (productError) throw productError;
@@ -133,6 +133,7 @@ export async function POST(request: Request) {
         category: product.category,
         spec: product.spec,
         returnable: product.returnable,
+        expensive: product.expensive === true,
       },
     });
   }
@@ -158,7 +159,7 @@ export async function POST(request: Request) {
 
     const { data: products, error: productsError } = await supabase
       .from("products")
-      .select("id, name, tier, unit, spec")
+      .select("id, name, tier, unit, spec, expensive")
       .eq("location_id", location.id)
       .eq("active", true);
     if (productsError) throw productsError;
@@ -181,6 +182,7 @@ export async function POST(request: Request) {
         tier: p.tier,
         unit: p.unit,
         spec: p.spec,
+        expensive: p.expensive === true,
       })),
     });
   }

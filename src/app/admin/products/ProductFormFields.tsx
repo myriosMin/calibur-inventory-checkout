@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import Button from "@/components/ui/Button";
+import { EXPENSIVE_THRESHOLD_SGD, type ExpenseBasis } from "@/lib/expensive";
 import { getBrowserClient } from "@/lib/supabase/browser";
 
 import {
@@ -12,6 +13,8 @@ import {
   OWNERSHIP_LABELS,
   TIERS,
   criticalityDefaults,
+  formExpenseBasis,
+  unitCostPatch,
   type Criticality,
   type Ownership,
   type ProductFormState,
@@ -32,6 +35,13 @@ interface ProductFormFieldsProps {
   categories: string[];
 }
 
+const EXPENSE_HELP: Record<ExpenseBasis, { text: string; tone: string }> = {
+  priced: { text: `Expensive (S$${EXPENSIVE_THRESHOLD_SGD}+): always returnable, tracked until it comes back.`, tone: "text-amber-300" },
+  assumed: { text: "No price, but critical: treated as expensive. Add a price to be sure.", tone: "text-amber-300" },
+  cheap: { text: `Under S$${EXPENSIVE_THRESHOLD_SGD}: not an expensive item.`, tone: "text-neutral-500" },
+  unpriced: { text: `No price: can't tell whether it is expensive (S$${EXPENSIVE_THRESHOLD_SGD}+).`, tone: "text-neutral-500" },
+};
+
 const INPUT = "min-h-10 rounded-lg border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100";
 const LABEL = "flex flex-col gap-1 text-sm";
 const CAPTION = "font-medium text-neutral-300";
@@ -47,6 +57,8 @@ export default function ProductFormFields({
   const [newLocationName, setNewLocationName] = useState("");
   const [creatingLocation, setCreatingLocation] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const basis = formExpenseBasis(form);
+  const expensive = basis === "priced" || basis === "assumed";
 
   async function handleCreateLocation() {
     const name = newLocationName.trim();
@@ -124,7 +136,7 @@ export default function ProductFormFields({
         <span className={CAPTION}>Criticality *</span>
         <select
           value={form.criticality}
-          onChange={(e) => onChange(criticalityDefaults(e.target.value as Criticality, form.tier))}
+          onChange={(e) => onChange(criticalityDefaults(e.target.value as Criticality, form.tier, form.unit_cost_sgd))}
           className={INPUT}
         >
           {CRITICALITIES.map((value) => (
@@ -210,9 +222,10 @@ export default function ProductFormFields({
           min="0"
           step="0.01"
           value={form.unit_cost_sgd}
-          onChange={(e) => onChange({ unit_cost_sgd: e.target.value })}
+          onChange={(e) => onChange(unitCostPatch(e.target.value, form.criticality))}
           className={INPUT}
         />
+        <span className={`text-xs ${EXPENSE_HELP[basis].tone}`}>{EXPENSE_HELP[basis].text}</span>
       </label>
 
       <label className={LABEL}>
@@ -228,7 +241,13 @@ export default function ProductFormFields({
 
       <div className="flex items-center gap-4 pt-6">
         <label className="flex items-center gap-2 text-sm text-neutral-200">
-          <input type="checkbox" checked={form.returnable} onChange={(e) => onChange({ returnable: e.target.checked })} />
+          <input
+            type="checkbox"
+            checked={form.returnable || expensive}
+            disabled={expensive}
+            title={expensive ? "Expensive items are always returnable" : undefined}
+            onChange={(e) => onChange({ returnable: e.target.checked })}
+          />
           Returnable
         </label>
         <label className="flex items-center gap-2 text-sm text-neutral-200">

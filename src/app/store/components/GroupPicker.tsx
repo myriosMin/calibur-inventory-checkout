@@ -8,6 +8,7 @@ export interface GroupPickerProduct {
   tier: "asset" | "bulk" | "loose";
   unit: string;
   spec?: Record<string, unknown> | null;
+  expensive?: boolean | null;
 }
 
 export interface GroupPickerProps {

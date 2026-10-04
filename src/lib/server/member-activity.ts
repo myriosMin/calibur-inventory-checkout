@@ -9,6 +9,8 @@ export interface MemberHoldingItem {
   tier: string;
   unit: string;
   qty: number;
+  /** products.expensive (0028). */
+  expensive: boolean;
 }
 
 export interface MemberHolderHoldings {
@@ -73,7 +75,7 @@ export async function getMemberHoldings(
   // through (same reason /api/store/holdings does it this way).
   const { data: products, error: productsError } = await supabase
     .from("products")
-    .select("id, name, tier, unit")
+    .select("id, name, tier, unit, expensive")
     .in("id", productIds)
     .eq("active", true);
   if (productsError) throw productsError;
@@ -101,6 +103,7 @@ export async function getMemberHoldings(
       tier: product.tier,
       unit: product.unit,
       qty: row.qty ?? 0,
+      expensive: product.expensive === true,
     });
   }
 

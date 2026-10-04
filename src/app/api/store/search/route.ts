@@ -6,11 +6,12 @@ export const runtime = "nodejs";
 
 type ProductRow = Pick<
   Database["public"]["Tables"]["products"]["Row"],
-  "id" | "name" | "tier" | "unit" | "category" | "spec"
+  "id" | "name" | "tier" | "unit" | "category" | "spec" | "expensive"
 >;
 
 const RESULT_LIMIT = 20;
-const SELECT_COLUMNS = "id, name, tier, unit, category, spec";
+// `expensive` (0028) so the cart can tell the member the part is tracked.
+const SELECT_COLUMNS = "id, name, tier, unit, category, spec, expensive";
 
 /**
  * Escapes the SQL LIKE/ILIKE special characters (`%`, `_`, and the escape

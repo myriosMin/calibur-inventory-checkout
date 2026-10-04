@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
 
 import Card from "@/components/admin/Card";
 import EmptyState from "@/components/admin/EmptyState";
@@ -12,24 +13,51 @@ import Segmented from "@/components/admin/Segmented";
 import Skeleton, { TableSkeleton } from "@/components/admin/Skeleton";
 import { IconSearch } from "@/components/ui/icons";
 import { KEYS, revalidate, upsertCached, useProducts, useReviewItems } from "@/lib/admin/queries";
+import { EXPENSIVE_RULE_TEXT } from "@/lib/expensive";
 
-import { DEFAULT_REVIEW_FILTERS, filterReviewItems, openCountsBySeverity, type ReviewFilters } from "./review-filters";
+import {
+  DEFAULT_REVIEW_FILTERS,
+  expensiveIds,
+  filterReviewItems,
+  openCountsByPriority,
+  openCountsBySeverity,
+  type ReviewFilters,
+} from "./review-filters";
 
 /**
  * The review queue: everything the catalog clean-up could not decide on its
  * own (docs/data-cleaning.md). The job is to fix the product -- or count it
  * in Stocktake -- and then close the item with a note saying what was found.
+ *
+ * Items about expensive things (0028: the product is expensive, or staff
+ * marked the item about_expensive) come first, whatever their severity: the
+ * club settles those before anything else.
  */
 export default function AdminReviewPage() {
+  return (
+    <Suspense fallback={<TableSkeleton />}>
+      <Review />
+    </Suspense>
+  );
+}
+
+function Review() {
+  const params = useSearchParams();
   const reviewsQ = useReviewItems();
   const productsQ = useProducts();
-  const [filters, setFilters] = useState<ReviewFilters>(DEFAULT_REVIEW_FILTERS);
+  // The dashboard links the expensive-item questions here as ?priority=high.
+  const [filters, setFilters] = useState<ReviewFilters>(() => ({
+    ...DEFAULT_REVIEW_FILTERS,
+    priority: params.get("priority") === "high" ? "high" : "all",
+  }));
 
   const items = useMemo(() => reviewsQ.data ?? [], [reviewsQ.data]);
   const productNames = useMemo(() => new Map((productsQ.data ?? []).map((p) => [p.id, p.name])), [productsQ.data]);
+  const expensive = useMemo(() => expensiveIds(productsQ.data ?? []), [productsQ.data]);
   const counts = useMemo(() => openCountsBySeverity(items), [items]);
+  const priority = useMemo(() => openCountsByPriority(items, expensive), [items, expensive]);
   const entities = useMemo(() => [...new Set(items.map((i) => i.entity))].sort(), [items]);
-  const visible = useMemo(() => filterReviewItems(items, filters), [items, filters]);
+  const visible = useMemo(() => filterReviewItems(items, filters, expensive), [items, filters, expensive]);
   const openTotal = counts.blocker + counts.check + counts.info;
   const closedTotal = items.length - openTotal;
   const loadError = (reviewsQ.error as Error | undefined)?.message;
@@ -43,13 +71,21 @@ export default function AdminReviewPage() {
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Review"
-        description={reviewsQ.isLoading ? "Questions from the catalog clean-up." : `${openTotal} open questions from the catalog clean-up.`}
+        description={
+          reviewsQ.isLoading
+            ? "Questions from the catalog clean-up."
+            : `${openTotal} open questions, ${priority.high} about expensive items.`
+        }
         info={
           <>
             <p>Everything the catalog clean-up couldn&apos;t decide on its own.</p>
             <p>
               Fix the product (or count it in Stocktake), then resolve the item with a note saying what you found.
               Dismiss only when the item is simply wrong.
+            </p>
+            <p>
+              Items about expensive parts are listed first and settled first. Expensive: {EXPENSIVE_RULE_TEXT} Tick
+              &quot;About expensive items&quot; on an item that isn&apos;t linked to one product but still is.
             </p>
           </>
         }
@@ -65,7 +101,13 @@ export default function AdminReviewPage() {
                 <span className="font-display text-2xl font-semibold tabular-nums text-neutral-100">{closedTotal}</span>
                 <span className="text-neutral-500"> of {items.length} closed</span>
               </span>
-              {openTotal === 0 && items.length > 0 ? <span className="text-green-400">Queue cleared</span> : null}
+              {openTotal === 0 && items.length > 0 ? (
+                <span className="text-green-400">Queue cleared</span>
+              ) : priority.high === 0 && items.length > 0 ? (
+                <span className="text-green-400">No expensive-item questions left</span>
+              ) : (
+                <span className="text-red-400">{priority.high} about expensive items: settle these first</span>
+              )}
             </div>
             <div
               className="h-2 w-full overflow-hidden rounded-full bg-neutral-800"
@@ -86,6 +128,17 @@ export default function AdminReviewPage() {
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-3">
+          <Segmented
+            ariaLabel="Priority"
+            value={filters.priority}
+            onChange={(value) => setFilters((f) => ({ ...f, priority: value }))}
+            options={[
+              { value: "all", label: "Any priority" },
+              { value: "high", label: "Expensive", count: priority.high, tone: "danger" },
+              { value: "normal", label: "Other", count: priority.normal },
+            ]}
+          />
+          <span aria-hidden className="hidden h-5 w-px bg-neutral-800 sm:block" />
           <Segmented
             ariaLabel="Severity"
             value={filters.severity}
@@ -149,7 +202,12 @@ export default function AdminReviewPage() {
         ) : visible.length === 0 ? (
           <EmptyState message={items.length === 0 ? "The review queue is empty." : "Nothing matches these filters."} />
         ) : (
-          <ReviewItemList items={visible} onUpdated={handleUpdated} productNames={productNames} />
+          <ReviewItemList
+            items={visible}
+            onUpdated={handleUpdated}
+            productNames={productNames}
+            expensiveProductIds={expensive}
+          />
         )}
       </Card>
     </div>

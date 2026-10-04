@@ -330,8 +330,9 @@ link. It went in as a plan (migration 0027), not into the ledger.
   warning.
 
 Staff see the lists at `/admin/builds`, with each linked line's current store
-quantity. Re-running the import replaces the season's lists by name and
-touches nothing else:
+quantity. Re-running the import replaces the season's lists by name. The only
+other thing it touches is `products.unit_cost_sgd`, and only where a product
+has no price yet (see "Expensive items" below):
 
 ```bash
 npx tsx scripts/migrate.ts --schema public    # and --schema test
@@ -343,13 +344,59 @@ npx tsx scripts/import-build-lists.ts --schema test && supabase db query --linke
 RLS: `scripts/sql/rehearse-0027-rls.sql`. It passes on both schemas: staff
 read and write, members see nothing, and anon is refused.
 
+## Expensive items (0028, 2026-10-04)
+
+**The rule.** The checkout works for every item, but anything worth **S$20
+or more a unit** is *expensive*. Expensive items are tracked properly, and
+data questions about them are settled before any others.
+
+- **The flag:** `products.expensive` is a generated column:
+  `coalesce(unit_cost_sgd >= 20, criticality = 'critical')`.
+  - A price decides when there is one.
+  - Without a price, a critical item is assumed expensive.
+  - Anything else counts as not expensive until it is priced.
+- **Tracked properly means returnable.** `submit_cart` lends a returnable
+  item to a holder, where it stays on the ledger, but sends a non-returnable
+  one straight to `consumed`. So `products_expensive_returnable` refuses an
+  expensive item that is not returnable, and the product form switches
+  returnable on as soon as the price reaches S$20.
+- **Prices:** none existed before. The build-list import filled 16 from the
+  AY26/27 sheets, taking the highest price where sheets disagree.
+  - Both ESC center boards get S$40 through a price-only match. The build-list
+    line itself stays unlinked, because it could be either board.
+  - Result: 61 products are expensive (16 priced, plus the unpriced critical
+    ones).
+  - 55 active reusable (standard) items still have no price. Products →
+    "Needs a price" lists them.
+- **Review priority:** an open review item is high priority when its product
+  is expensive, or when `review_items.about_expensive` is set. That column is
+  for items about expensive kit that no single product captures, like the
+  legacy-loans item (#166). High-priority items sort first, whatever their
+  severity, and the Review badge counts only them. After the backfill, 16 of
+  the 18 open items are high priority.
+- **Elsewhere:**
+  - **Dashboard:** an "Expensive-item questions" tile, plus "Needs
+    attention" entries for those questions and for unpriced reusable kit.
+  - **Products:** a price column and an "expensive" pill.
+  - **Holdings:** an "Expensive only" filter.
+  - **Stocktake:** expensive items are counted first, and an expensive
+    shortfall shows red.
+  - **CSV exports:** `unit_cost_sgd` and `expensive` columns, added at the end.
+  - **Weekly digest:** a new first section, "Expensive items with members",
+    covering every one held, however recently taken.
+  - **Overdue nudges and `/myitems`:** expensive items are marked.
+  - **Mini App:** the cart and `/store/mine` mark expensive items.
+
 ## Open questions
 
 - Which critical items are actually borrowed from other departments or clubs?
   The sheets only ever recorded three loans.
 - Who else is admin, and who reviews as procurement?
 - Are the 13 M3508 flywheel motors part of the 64, or extra?
-- Is S$150 the right line for `critical`?
+- Is S$150 the right line for `critical`? Now that S$20 is the expensive
+  line, should every priced critical item really cost S$150+? The C620
+  (S$80) and M3508 (S$54.65) don't.
+- 55 reusable items have no price. Who prices them, and from what source?
 - What is the "UV charger", who or what is "Hopps", and should the four DarkSTDs
   be one holder or four?
 - Should the procurement backlog (`bom_lines.csv`) live in the dashboard too?

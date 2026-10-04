@@ -89,6 +89,8 @@ export async function runExport(kind: ExportKind, ctx: ExportContext): Promise<s
       qtyInStore: levelById.get(product.id)?.qtyInStore ?? null,
       qtyOut: levelById.get(product.id)?.qtyOut ?? null,
       code: codeByProduct.get(product.id) ?? null,
+      unitCostSgd: product.unitCostSgd ?? null,
+      expensive: product.expensive === true,
     }));
     downloadCsv(filename, buildCatalogCsv(rows));
     return filename;
@@ -120,6 +122,7 @@ export async function runExport(kind: ExportKind, ctx: ExportContext): Promise<s
           productName: product?.name ?? "Unknown product",
           qty: Number(row.qty ?? 0),
           unit: product?.unit ?? "",
+          expensive: product?.expensive === true,
         };
       })
       .sort(

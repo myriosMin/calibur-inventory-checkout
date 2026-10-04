@@ -13,6 +13,7 @@ import StatusPill from "@/components/admin/StatusPill";
 import Button from "@/components/ui/Button";
 import Toast from "@/components/ui/Toast";
 import { KEYS, revalidate, upsertCached, useLocations, useProducts, useReviewItems } from "@/lib/admin/queries";
+import { EXPENSIVE_RULE_TEXT, EXPENSIVE_THRESHOLD_SGD, type ExpenseBasis, expenseBasis } from "@/lib/expensive";
 import { getBrowserClient } from "@/lib/supabase/browser";
 import type { Database } from "@/lib/types/database";
 
@@ -34,6 +35,13 @@ type Product = Database["public"]["Tables"]["products"]["Row"];
  * visited first (no request at all), else one row by id. Every write goes
  * through the anon browser client; RLS (is_admin / is_staff) decides.
  */
+const EXPENSE_LABEL: Record<ExpenseBasis, string> = {
+  priced: `Yes (S$${EXPENSIVE_THRESHOLD_SGD}+), always returnable`,
+  assumed: "Yes, assumed: critical with no price",
+  cheap: `No (under S$${EXPENSIVE_THRESHOLD_SGD})`,
+  unpriced: "Unknown: needs a price",
+};
+
 export default function AdminProductEditPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const productsQ = useProducts();
@@ -123,6 +131,12 @@ export default function AdminProductEditPage({ params }: { params: Promise<{ id:
     ["Part number", product.part_number],
     ["Supplier", product.supplier],
     ["Unit cost", product.unit_cost_sgd !== null ? `S$${product.unit_cost_sgd.toFixed(2)}` : null],
+    [
+      "Expensive",
+      <span key="e" title={EXPENSIVE_RULE_TEXT}>
+        {EXPENSE_LABEL[expenseBasis({ unitCostSgd: product.unit_cost_sgd, criticality: product.criticality })]}
+      </span>,
+    ],
   ];
 
   return (
@@ -138,6 +152,7 @@ export default function AdminProductEditPage({ params }: { params: Promise<{ id:
           actions={
             <>
               {product.criticality === "critical" ? <StatusPill tone="danger">critical</StatusPill> : null}
+              {product.expensive === true ? <StatusPill tone="warning">expensive</StatusPill> : null}
               {product.ownership !== "owned" ? <StatusPill tone="warning">on loan</StatusPill> : null}
               {!product.active ? <StatusPill tone="inactive">inactive</StatusPill> : null}
               <Button
@@ -189,6 +204,7 @@ export default function AdminProductEditPage({ params }: { params: Promise<{ id:
                 <ReviewItemList
                   items={shownReviews}
                   expandAll={shownReviews.length <= 2}
+                  expensiveProductIds={product.expensive === true ? new Set([product.id]) : undefined}
                   onUpdated={(updated: ReviewItem) => {
                     void upsertCached(KEYS.reviewItems, updated);
                     void revalidate(KEYS.badges);

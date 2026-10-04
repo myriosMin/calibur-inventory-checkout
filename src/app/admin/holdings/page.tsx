@@ -40,7 +40,12 @@ function columnsFor(flagNegatives: boolean): Column<HoldingLine>[] {
   {
     key: "product",
     header: "Product",
-    render: (line) => <span className="text-neutral-100">{line.productName}</span>,
+    render: (line) => (
+      <span className="flex items-center gap-2">
+        <span className="text-neutral-100">{line.productName}</span>
+        {line.expensive ? <StatusPill tone="warning">expensive</StatusPill> : null}
+      </span>
+    ),
   },
   { key: "tier", header: "Tier", render: (line) => <span className="text-neutral-500">{line.tier}</span> },
   {
@@ -95,6 +100,8 @@ function Holdings() {
   const [holderFilter, setHolderFilter] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [negativesOnly, setNegativesOnly] = useState(params.get("negatives") === "1");
+  // Expensive items (0028) are the ones to account for; the dashboard links here as ?expensive=1.
+  const [expensiveOnly, setExpensiveOnly] = useState(params.get("expensive") === "1");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const loading = holdingsQ.isLoading || holdersQ.isLoading || productsQ.isLoading;
@@ -146,15 +153,16 @@ function Holdings() {
         lines: group.lines.filter(
           (line) =>
             (!negativesOnly || (line.qty < 0 && group.negativeCount > 0)) &&
+            (!expensiveOnly || line.expensive) &&
             (needle.length === 0 ||
               line.productName.toLowerCase().includes(needle) ||
               group.holder.name.toLowerCase().includes(needle)),
         ),
       }))
       .filter((group) => group.lines.length > 0);
-  }, [allGroups, kindFilter, holderFilter, search, negativesOnly]);
+  }, [allGroups, kindFilter, holderFilter, search, negativesOnly, expensiveOnly]);
 
-  const filtering = search.trim().length > 0 || negativesOnly || holderFilter !== null;
+  const filtering = search.trim().length > 0 || negativesOnly || expensiveOnly || holderFilter !== null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -226,6 +234,19 @@ function Holdings() {
               className="min-h-9 w-full rounded-lg border border-neutral-800 bg-neutral-900/60 pl-9 pr-3 text-sm text-neutral-100 placeholder:text-neutral-600 sm:w-56"
             />
           </label>
+          <button
+            type="button"
+            aria-pressed={expensiveOnly}
+            onClick={() => setExpensiveOnly((value) => !value)}
+            title="Only expensive items (S$20+, or critical with no price)"
+            className={`inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-lg border px-3 text-sm transition-colors ${
+              expensiveOnly
+                ? "border-amber-500/50 bg-amber-500/10 text-amber-300"
+                : "border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200"
+            }`}
+          >
+            Expensive only
+          </button>
           {totalNegatives > 0 ? (
             <span className="flex items-center gap-1">
               <button

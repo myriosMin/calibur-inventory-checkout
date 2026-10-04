@@ -25,6 +25,8 @@ export interface ProductRef {
   name: string;
   unit: string | null;
   tier: string;
+  /** products.expensive (0028); generated, so nullable in the types. */
+  expensive?: boolean | null;
 }
 
 export interface HoldingLine {
@@ -33,6 +35,7 @@ export interface HoldingLine {
   unit: string;
   tier: string;
   qty: number;
+  expensive: boolean;
 }
 
 export interface HolderGroup {
@@ -111,6 +114,7 @@ export function groupHoldingsByHolder(
       unit: product?.unit ?? "pcs",
       tier: product?.tier ?? "bulk",
       qty: row.qty,
+      expensive: product?.expensive === true,
     });
   }
 

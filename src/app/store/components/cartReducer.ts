@@ -23,6 +23,8 @@ export interface CartProduct {
   category?: string | null;
   spec?: Record<string, unknown> | null;
   returnable?: boolean;
+  /** products.expensive (0028): S$20+ or critical. Always a borrow, never consumed. */
+  expensive?: boolean | null;
 }
 
 export interface CartLine {

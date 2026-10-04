@@ -52,6 +52,9 @@ export interface CatalogExportRow {
   qtyOut: number | null;
   /** Active product label, so a reprint does not need the database. */
   code: string | null;
+  unitCostSgd?: number | null;
+  /** products.expensive (0028). Appended last so earlier columns keep their place. */
+  expensive?: boolean;
 }
 
 export const CATALOG_CSV_HEADER = [
@@ -68,6 +71,8 @@ export const CATALOG_CSV_HEADER = [
   "qty_in_store",
   "qty_out",
   "scan_code",
+  "unit_cost_sgd",
+  "expensive",
 ] as const;
 
 export function buildCatalogCsv(rows: readonly CatalogExportRow[]): string {
@@ -87,6 +92,8 @@ export function buildCatalogCsv(rows: readonly CatalogExportRow[]): string {
       num(row.qtyInStore),
       num(row.qtyOut),
       text(row.code),
+      num(row.unitCostSgd ?? null),
+      row.expensive ? "yes" : "no",
     ]),
   );
 }
@@ -102,6 +109,7 @@ export interface HoldingsExportRow {
   productName: string;
   qty: number;
   unit: string;
+  expensive?: boolean;
 }
 
 export const HOLDINGS_CSV_HEADER = [
@@ -111,6 +119,7 @@ export const HOLDINGS_CSV_HEADER = [
   "product_name",
   "qty",
   "unit",
+  "expensive",
 ] as const;
 
 export function buildHoldingsCsv(rows: readonly HoldingsExportRow[]): string {
@@ -123,6 +132,7 @@ export function buildHoldingsCsv(rows: readonly HoldingsExportRow[]): string {
       row.productName,
       String(row.qty),
       row.unit,
+      row.expensive ? "yes" : "no",
     ]),
   );
 }

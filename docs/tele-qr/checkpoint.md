@@ -30,13 +30,32 @@ Two things stand between here and real use, and neither is code:
 
 ---
 
+## Expensive items (2026-10-04)
+
+Migration `0028_expensive_items.sql` is applied to both schemas.
+
+- **The rule:** S$20+ a unit is expensive. Without a price, a critical item
+  counts as expensive.
+- **Enforced by the database:** an expensive item must be returnable, so the
+  checkout always lends it and never consumes it.
+- **Prices:** 16 products now have a price, taken from the build lists. 61
+  products are expensive.
+- **Review queue:** questions about expensive items come first, and the
+  sidebar badge counts only those (16 of the 18 open).
+- **Across the app:** the flag shows on the dashboard, products, holdings,
+  stocktake and variance, the CSV exports, the digest and nudges, `/myitems`,
+  the cart and `/store/mine`. Details are in
+  [../data-cleaning.md](../data-cleaning.md), "Expensive items".
+- **Still to do:** 55 reusable items have no price, so nobody can tell yet
+  whether they are expensive.
+
 ## Build lists (2026-10-04)
 
 Migration `0027_build_lists.sql` is applied to both schemas.
 
 - The AY26/27 build budget (`data/Calibur_AY2627.xlsx`) is loaded into `public` and `test` as
   `build_lists` / `build_list_lines`: 4 robots and 187 lines. These are a plan, not stock. The
-  ledger is untouched.
+  ledger is untouched. The import also fills `products.unit_cost_sgd`, but only where it is empty.
 - Staff view it at `/admin/builds` (read-only). Linked lines show the store quantity,
   amber when short.
 - The import is `scripts/import-build-lists.ts`. Details and judgement calls are in

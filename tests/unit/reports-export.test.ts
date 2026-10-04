@@ -68,11 +68,12 @@ describe("buildHoldingsCsv", () => {
         productName: "M3508",
         qty: 2,
         unit: "pcs",
+        expensive: true,
       },
     ]);
     const rows = parseCsv(csv);
     expect(rows[0]).toEqual([...HOLDINGS_CSV_HEADER]);
-    expect(rows[1]).toEqual(["robot", "DarkNUS", "p1", "M3508", "2", "pcs"]);
+    expect(rows[1]).toEqual(["robot", "DarkNUS", "p1", "M3508", "2", "pcs", "yes"]);
   });
 
   it("keeps a negative holding as a negative number", () => {

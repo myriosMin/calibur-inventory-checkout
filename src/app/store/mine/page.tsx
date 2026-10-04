@@ -21,6 +21,7 @@ interface HoldingItem {
   tier: string;
   unit: string;
   qty: number;
+  expensive?: boolean;
 }
 
 interface HolderHoldings {
@@ -185,6 +186,9 @@ export default function MyItemsPage() {
                         >
                           <span className="min-w-0 truncate text-sm text-neutral-100">
                             {item.name}
+                            {item.expensive ? (
+                              <span className="ml-2 text-xs text-amber-300">Expensive</span>
+                            ) : null}
                           </span>
                           <span className="shrink-0 text-xs text-neutral-400">
                             × {item.qty} {item.unit}

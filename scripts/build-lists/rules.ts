@@ -131,13 +131,56 @@ const SHEET_PRODUCT_MATCHES: Record<string, Record<string, string>> = {
   "2627 Hero": { "speed monitor module": "DJI referee Speed Monitor Module 42mm SM11" },
 };
 
+/**
+ * Lines whose PRODUCT is ambiguous but whose PRICE is not: the "ESC centre
+ * board" line stays unlinked (board 1 or 2?), yet either board is the same
+ * S$40 part, and the price is what decides whether it is expensive (0028).
+ */
+const PRICE_ONLY_MATCHES: Record<string, string[]> = {
+  "esc centre board": ["ESC center board 1", "ESC center board 2"],
+};
+
 /** Every product name the import expects to find, for a pre-flight check. */
 export function expectedProductNames(): string[] {
   const all = [
     ...Object.values(PRODUCT_MATCHES),
     ...Object.values(SHEET_PRODUCT_MATCHES).flatMap((byName) => Object.values(byName)),
+    ...Object.values(PRICE_ONLY_MATCHES).flat(),
   ];
   return [...new Set(all)].sort();
+}
+
+export interface ProductPrice {
+  productName: string;
+  unitPriceSgd: number;
+  /** "Hero!3, Double Yaw Sentry!49" -- where the price came from. */
+  from: string;
+}
+
+/**
+ * One price per store product, from every bought line that is (or prices)
+ * it. Where the sheets disagree (DM4310: S$118.66 for the V1.1, S$155.28 for
+ * the J4310P) the HIGHEST wins: the price only ever feeds the S$20
+ * "expensive" line and the cost estimates, and over-estimating an expensive
+ * part is the safe direction. Lines with no price (referee kit, TBD) don't count.
+ */
+export function productPrices(plans: ReadonlyArray<{ name: string; lines: readonly BuildLine[] }>): ProductPrice[] {
+  const best = new Map<string, { price: number; from: string[] }>();
+  for (const plan of plans) {
+    for (const line of plan.lines) {
+      if (line.sourcing !== "buy" || line.unitPriceSgd === null) continue;
+      const names = line.productName ? [line.productName] : (PRICE_ONLY_MATCHES[line.partName.toLowerCase()] ?? []);
+      for (const name of names) {
+        const where = `${plan.name}!${line.sourceRow}`;
+        const current = best.get(name);
+        if (!current || line.unitPriceSgd > current.price) best.set(name, { price: line.unitPriceSgd, from: [where] });
+        else if (line.unitPriceSgd === current.price) current.from.push(where);
+      }
+    }
+  }
+  return [...best]
+    .map(([productName, { price, from }]) => ({ productName, unitPriceSgd: price, from: from.join(", ") }))
+    .sort((a, b) => a.productName.localeCompare(b.productName));
 }
 
 export function normalizeCategory(raw: string): string | null {

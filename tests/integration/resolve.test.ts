@@ -55,6 +55,7 @@ describe("POST /api/store/resolve (integration, live DB)", () => {
     category: string | null;
     spec: unknown;
     returnable: boolean;
+    expensive: boolean | null;
   };
   let groupCode: string;
   let groupLocationName: string;
@@ -101,7 +102,7 @@ describe("POST /api/store/resolve (integration, live DB)", () => {
 
     const { data: productRow, error: productErr } = await db
       .from("products")
-      .select("id, name, tier, unit, category, spec, returnable, active")
+      .select("id, name, tier, unit, category, spec, returnable, active, expensive")
       .eq("id", seededProductId)
       .single();
     if (productErr) throw productErr;
@@ -170,6 +171,7 @@ describe("POST /api/store/resolve (integration, live DB)", () => {
         category: seededProduct.category,
         spec: seededProduct.spec,
         returnable: seededProduct.returnable,
+        expensive: seededProduct.expensive === true,
       },
     });
   });

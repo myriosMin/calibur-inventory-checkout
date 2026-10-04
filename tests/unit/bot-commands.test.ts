@@ -11,17 +11,18 @@ import {
 } from "@/lib/telegram/commands";
 import type { MemberHolderHoldings } from "@/lib/server/member-activity";
 
-function holder(name: string, items: Array<[string, number, string]>): MemberHolderHoldings {
+function holder(name: string, items: Array<[string, number, string, boolean?]>): MemberHolderHoldings {
   return {
     holderId: `holder-${name}`,
     holderName: name,
     holderKind: "robot",
-    items: items.map(([itemName, qty, unit]) => ({
+    items: items.map(([itemName, qty, unit, expensive = false]) => ({
       productId: `p-${itemName}`,
       name: itemName,
       tier: "asset",
       unit,
       qty,
+      expensive,
     })),
   };
 }
@@ -94,7 +95,7 @@ describe("buildMyItemsText", () => {
         ["GM6020", 2, "pcs"],
         ["Center board", 1, "pcs"],
       ]),
-      holder("Personal / bench", [["Livox LiDAR", 1, "pcs"]]),
+      holder("Personal / bench", [["Livox LiDAR", 1, "pcs", true]]),
     ]);
 
     expect(text).toBe(
@@ -106,7 +107,7 @@ describe("buildMyItemsText", () => {
         "- Center board x1 pcs",
         "",
         "Personal / bench",
-        "- Livox LiDAR x1 pcs",
+        "- Livox LiDAR x1 pcs (expensive)",
       ].join("\n"),
     );
   });

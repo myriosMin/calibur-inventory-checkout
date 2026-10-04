@@ -190,6 +190,13 @@ _counting UX only_, not whether an item can be scanned.
 is chased and whether it is on loan to the club. `asset_units` is a per-unit
 register (serials, condition), not a second ledger.
 
+`products.expensive` (0028) is generated from the price: S$20+ a unit, or
+critical with no price. An expensive item must be returnable (a CHECK
+constraint), because a non-returnable item is consumed at checkout and
+never tracked again. Review items about expensive items are high priority.
+The same rule lives in `src/lib/expensive.ts`, and a test keeps it in step
+with the migration.
+
 `scan_codes` is a separate table from `products` (not a column) specifically
 so a damaged label can be reissued a new code, or retired, without touching
 the product. `kind = 'group'` codes (e.g. the resistor book) resolve to a

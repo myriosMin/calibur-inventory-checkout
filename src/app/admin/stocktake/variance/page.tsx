@@ -54,6 +54,11 @@ export default function AdminStocktakeVariancePage() {
     [productsQ.data],
   );
   const locations = useMemo(() => locationsQ.data ?? [], [locationsQ.data]);
+  // Expensive items (0028): a shortfall on one of these is the one to chase.
+  const expensive = useMemo(
+    () => new Set((productsQ.data ?? []).filter((row) => row.expensive === true).map((row) => row.id)),
+    [productsQ.data],
+  );
   const loading = countsQ.isLoading || productsQ.isLoading || locationsQ.isLoading;
   const loadError = ((countsQ.error ?? productsQ.error ?? locationsQ.error) as Error | undefined)?.message ?? null;
   const [onlyVariance, setOnlyVariance] = useState(true);
@@ -65,8 +70,12 @@ export default function AdminStocktakeVariancePage() {
   const byLocation = useMemo(() => summariseByLocation(byProduct), [byProduct]);
 
   const visibleProducts = useMemo(
-    () => (onlyVariance ? byProduct.filter((p) => p.absVariance !== 0) : byProduct),
-    [byProduct, onlyVariance],
+    () =>
+      (onlyVariance ? byProduct.filter((p) => p.absVariance !== 0) : byProduct)
+        .slice()
+        // Stable sort: expensive first, otherwise summariseByProduct's order.
+        .sort((a, b) => Number(expensive.has(b.productId)) - Number(expensive.has(a.productId))),
+    [byProduct, onlyVariance, expensive],
   );
 
   const productsOff = byProduct.filter((p) => p.absVariance !== 0).length;
@@ -76,7 +85,10 @@ export default function AdminStocktakeVariancePage() {
       key: "product",
       header: "Product",
       render: (row) => (
-        <span className="text-neutral-100">{row.productName}</span>
+        <span className="flex items-center gap-2">
+          <span className="text-neutral-100">{row.productName}</span>
+          {expensive.has(row.productId) ? <StatusPill tone="warning">expensive</StatusPill> : null}
+        </span>
       ),
     },
     {
@@ -98,7 +110,7 @@ export default function AdminStocktakeVariancePage() {
         row.lastVariance === 0 ? (
           <span className="text-neutral-400">matched</span>
         ) : (
-          <StatusPill tone="warning">
+          <StatusPill tone={expensive.has(row.productId) && row.lastVariance < 0 ? "danger" : "warning"}>
             {formatVariance(row.lastVariance)}
           </StatusPill>
         ),

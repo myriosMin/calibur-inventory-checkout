@@ -166,7 +166,7 @@ export function buildMyItemsText(holders: MemberHolderHoldings[]): string {
   const body = groups
     .map((group) => {
       const items = group.items
-        .map((item) => `- ${item.name} x${item.qty} ${item.unit}`.trimEnd())
+        .map((item) => `- ${item.name} x${item.qty} ${item.unit}`.trimEnd() + (item.expensive ? " (expensive)" : ""))
         .join("\n");
       return `${group.holderName}\n${items}`;
     })

@@ -115,18 +115,31 @@ export function useIsAdmin() {
 
 export interface NavBadges {
   openReview: number;
+  /** Open items about expensive items (0028): the Review badge, settled first. */
+  openReviewExpensive: number;
   bindQueue: number;
 }
 
-/** Count-only reads (no rows transferred) for the sidebar badges. */
+/**
+ * Small reads for the sidebar badges. The open review items come back as
+ * rows (a few dozen at most) with their product's `expensive` embedded, so
+ * one request gives both the total and the high-priority count.
+ */
 export function useNavBadges() {
   return useSWR<NavBadges>(KEYS.badges, async () => {
     const [review, bindQueue] = await Promise.all([
-      db().from("review_items").select("*", { count: "exact", head: true }).eq("status", "open"),
+      fetchAllRows((from, to) =>
+        db()
+          .from("review_items")
+          .select("id, about_expensive, product:products(expensive)")
+          .eq("status", "open")
+          .order("id")
+          .range(from, to),
+      ),
       fetchBindQueueDepth(db()),
     ]);
-    if (review.error) throw new Error(review.error.message);
-    return { openReview: review.count ?? 0, bindQueue };
+    const openReviewExpensive = review.filter((item) => item.about_expensive || item.product?.expensive === true).length;
+    return { openReview: review.length, openReviewExpensive, bindQueue };
   });
 }
 
@@ -265,6 +278,8 @@ export function toReportProducts(rows: readonly ProductRow[]): ReportProductRef[
     category: row.category,
     partNumber: row.part_number,
     active: row.active,
+    unitCostSgd: row.unit_cost_sgd,
+    expensive: row.expensive === true,
   }));
 }
 

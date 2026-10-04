@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import Button from "@/components/ui/Button";
 import { IconChevronDown } from "@/components/ui/icons";
+import { isHighPriorityReview } from "@/lib/expensive";
 import { getBrowserClient } from "@/lib/supabase/browser";
 import type { Database } from "@/lib/types/database";
 
@@ -25,6 +26,11 @@ export interface ReviewItemListProps {
   productNames?: Map<string, string>;
   /** Open every item on first render: for a short list, like one product's. */
   expandAll?: boolean;
+  /**
+   * Products that are expensive (0028). An item about one, or marked
+   * about_expensive, is high priority and says so.
+   */
+  expensiveProductIds?: ReadonlySet<string>;
 }
 
 /**
@@ -36,7 +42,13 @@ export interface ReviewItemListProps {
  * signed-in session (0025_review_queue_and_staff_stocktake.sql), never sent
  * from here.
  */
-export default function ReviewItemList({ items, onUpdated, productNames, expandAll = false }: ReviewItemListProps) {
+export default function ReviewItemList({
+  items,
+  onUpdated,
+  productNames,
+  expandAll = false,
+  expensiveProductIds = new Set(),
+}: ReviewItemListProps) {
   const [openId, setOpenId] = useState<number | null>(null);
   return (
     <ul className="divide-y divide-neutral-800/70">
@@ -52,6 +64,8 @@ export default function ReviewItemList({ items, onUpdated, productNames, expandA
             if (updated.status !== "open") setOpenId(null);
           }}
           productName={item.product_id ? productNames?.get(item.product_id) : undefined}
+          highPriority={isHighPriorityReview(item, expensiveProductIds)}
+          productIsExpensive={item.product_id !== null && expensiveProductIds.has(item.product_id)}
         />
       ))}
     </ul>
@@ -64,12 +78,16 @@ function ReviewItemRow({
   onToggle,
   onUpdated,
   productName,
+  highPriority,
+  productIsExpensive,
 }: {
   item: ReviewItem;
   open: boolean;
   onToggle?: () => void;
   onUpdated: (item: ReviewItem) => void;
   productName?: string;
+  highPriority: boolean;
+  productIsExpensive: boolean;
 }) {
   const [note, setNote] = useState(item.resolution_note ?? "");
   const [saving, setSaving] = useState(false);
@@ -92,10 +110,32 @@ function ReviewItemRow({
     onUpdated(data);
   }
 
+  async function setAboutExpensive(aboutExpensive: boolean) {
+    setSaving(true);
+    setError(null);
+    const { data, error: updateError } = await getBrowserClient()
+      .from("review_items")
+      .update({ about_expensive: aboutExpensive })
+      .eq("id", item.id)
+      .select()
+      .single();
+    setSaving(false);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+    onUpdated(data);
+  }
+
   const isOpen = item.status === "open";
   const header = (
     <>
       <StatusPill tone={SEVERITY_TONE[item.severity] ?? "inactive"}>{item.severity}</StatusPill>
+      {highPriority ? (
+        <span title="About an expensive item: settle it first" className="shrink-0">
+          <StatusPill tone="danger">expensive</StatusPill>
+        </span>
+      ) : null}
       <span className={`min-w-0 flex-1 truncate text-sm ${isOpen ? "text-neutral-100" : "text-neutral-500"}`}>
         {item.subject}
       </span>
@@ -136,6 +176,20 @@ function ReviewItemRow({
             ) : null}
           </p>
           <p className="whitespace-pre-line text-sm leading-relaxed text-neutral-300">{item.issue}</p>
+
+          {productIsExpensive ? (
+            <p className="text-xs text-neutral-500">High priority: the product is an expensive item.</p>
+          ) : isOpen || item.about_expensive ? (
+            <label className="flex items-center gap-2 text-xs text-neutral-400">
+              <input
+                type="checkbox"
+                checked={item.about_expensive}
+                disabled={saving}
+                onChange={(e) => void setAboutExpensive(e.target.checked)}
+              />
+              About expensive items (settle it first)
+            </label>
+          ) : null}
 
           {isOpen ? (
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">

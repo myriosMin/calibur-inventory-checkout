@@ -1,3 +1,4 @@
+import { needsPrice } from "@/lib/expensive";
 import { classifyStockLevel } from "@/lib/reports/stock";
 import type { Database } from "@/lib/types/database";
 
@@ -17,6 +18,8 @@ export interface ProductListFilters {
   /** "" = any category. */
   category: string;
   criticality: "all" | "critical" | "standard" | "expendable";
+  /** 0028: S$20+ (or critical with no price) / not / reusable kit with no price. */
+  expense: ExpenseFilter;
   status: "all" | "active" | "inactive";
   onlyNeedsReview: boolean;
   /** Stock health, from the same classifier the low-stock alert uses. */
@@ -24,6 +27,12 @@ export interface ProductListFilters {
 }
 
 export type StockFilter = "all" | "low" | "empty" | "negative";
+export type ExpenseFilter = "all" | "expensive" | "not_expensive" | "needs_price";
+
+/** A list row's price question, in the products cache's snake_case. */
+export function rowNeedsPrice(row: Pick<Product, "unit_cost_sgd" | "criticality" | "active">): boolean {
+  return needsPrice({ unitCostSgd: row.unit_cost_sgd, criticality: row.criticality, active: row.active });
+}
 
 /**
  * Which stock bucket a row falls in. "low" and "negative" are
@@ -43,6 +52,7 @@ export const DEFAULT_PRODUCT_FILTERS: ProductListFilters = {
   query: "",
   category: "",
   criticality: "all",
+  expense: "all",
   status: "all",
   onlyNeedsReview: false,
   stock: "all",
@@ -54,6 +64,9 @@ export function filterProducts(rows: ProductListRow[], filters: ProductListFilte
     .filter((row) => {
       if (filters.category && row.category !== filters.category) return false;
       if (filters.criticality !== "all" && row.criticality !== filters.criticality) return false;
+      if (filters.expense === "expensive" && row.expensive !== true) return false;
+      if (filters.expense === "not_expensive" && row.expensive === true) return false;
+      if (filters.expense === "needs_price" && !rowNeedsPrice(row)) return false;
       if (filters.status === "active" && !row.active) return false;
       if (filters.status === "inactive" && row.active) return false;
       if (filters.onlyNeedsReview && row.openReviews === 0) return false;

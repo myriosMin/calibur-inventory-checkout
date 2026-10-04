@@ -446,6 +446,7 @@ export default function BorrowPage() {
     name: line.product.name,
     unit: line.product.unit,
     qty: line.qty,
+    expensive: line.product.expensive === true,
   }));
 
   // Gated on `!destPickerOpen`: for the very first item of the session,

@@ -24,6 +24,7 @@ import {
   useReviewItems,
   useStockLevels,
 } from "@/lib/admin/queries";
+import { EXPENSIVE_RULE_TEXT } from "@/lib/expensive";
 import { getBrowserClient } from "@/lib/supabase/browser";
 
 import ProductFormFields from "./ProductFormFields";
@@ -32,7 +33,9 @@ import {
   DEFAULT_PRODUCT_FILTERS,
   distinctCategories,
   filterProducts,
+  rowNeedsPrice,
   stockBucket,
+  type ExpenseFilter,
   type ProductListFilters,
   type ProductListRow,
   type StockFilter,
@@ -53,6 +56,7 @@ export default function AdminProductsPage() {
 }
 
 const STOCK_PARAM: Record<string, StockFilter> = { low: "low", empty: "empty", negative: "negative" };
+const EXPENSE_PARAM: Record<string, ExpenseFilter> = { expensive: "expensive", needs_price: "needs_price" };
 
 function Products() {
   const params = useSearchParams();
@@ -65,6 +69,8 @@ function Products() {
     ...DEFAULT_PRODUCT_FILTERS,
     // The dashboard's "Low stock" tile links here as ?stock=low.
     stock: STOCK_PARAM[params.get("stock") ?? ""] ?? "all",
+    // ...and the expensive-item tiles as ?expense=expensive / needs_price.
+    expense: EXPENSE_PARAM[params.get("expense") ?? ""] ?? "all",
   }));
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState<ProductFormState>(EMPTY_PRODUCT_FORM);
@@ -97,20 +103,32 @@ function Products() {
   const visible = useMemo(() => filterProducts(rows, filters), [rows, filters]);
 
   const bucketCounts = useMemo(() => {
-    const counts = { low: 0, empty: 0, negative: 0, review: 0 };
+    const counts = { low: 0, empty: 0, negative: 0, review: 0, expensive: 0, needsPrice: 0 };
     for (const row of rows) {
       const bucket = stockBucket(row);
       if (bucket !== "ok") counts[bucket] += 1;
       if (row.openReviews > 0) counts.review += 1;
+      if (row.expensive === true) counts.expensive += 1;
+      if (rowNeedsPrice(row)) counts.needsPrice += 1;
     }
     return counts;
   }, [rows]);
 
-  // The chips combine the stock buckets and "needs review" into one control.
-  type Chip = StockFilter | "review";
-  const chip: Chip = filters.onlyNeedsReview ? "review" : filters.stock;
+  // The chips combine the stock buckets, "needs review" and the expensive
+  // filters (0028) into one control: one chip at a time.
+  type Chip = StockFilter | "review" | "expensive" | "needs_price";
+  const chip: Chip = filters.onlyNeedsReview
+    ? "review"
+    : filters.expense === "expensive" || filters.expense === "needs_price"
+      ? filters.expense
+      : filters.stock;
   const setChip = (value: Chip) =>
-    setFilters((f) => ({ ...f, onlyNeedsReview: value === "review", stock: value === "review" ? "all" : value }));
+    setFilters((f) => ({
+      ...f,
+      onlyNeedsReview: value === "review",
+      expense: value === "expensive" || value === "needs_price" ? value : "all",
+      stock: value === "review" || value === "expensive" || value === "needs_price" ? "all" : value,
+    }));
 
   const moreFilters =
     (filters.category ? 1 : 0) + (filters.criticality !== "all" ? 1 : 0) + (filters.status !== "all" ? 1 : 0);
@@ -177,6 +195,17 @@ function Products() {
       },
     },
     {
+      key: "cost",
+      header: "Unit cost",
+      className: "text-right tabular-nums whitespace-nowrap",
+      render: (row) =>
+        row.unit_cost_sgd !== null ? (
+          <span className={row.expensive === true ? "text-amber-300" : "text-neutral-400"}>S${row.unit_cost_sgd.toFixed(2)}</span>
+        ) : (
+          <span className="text-neutral-600">—</span>
+        ),
+    },
+    {
       key: "out",
       header: "Out",
       className: "text-right tabular-nums",
@@ -189,6 +218,7 @@ function Products() {
       render: (row) => (
         <span className="flex flex-wrap justify-end gap-1">
           {row.openReviews > 0 ? <StatusPill tone="warning">{row.openReviews} to review</StatusPill> : null}
+          {row.expensive === true ? <StatusPill tone="warning">expensive</StatusPill> : null}
           {row.criticality === "critical" ? <StatusPill tone="danger">critical</StatusPill> : null}
           {row.ownership !== "owned" ? (
             <StatusPill tone="warning">{row.ownership === "on_loan" ? "on loan" : "part on loan"}</StatusPill>
@@ -204,7 +234,15 @@ function Products() {
       <PageHeader
         title="Products"
         description={loading ? "The catalog." : `${rows.length} products in the catalog.`}
-        info="Open a product to fix its details, see where every unit is, and work through its review items. Quantities are corrected by counting in Stocktake, never typed over."
+        info={
+          <>
+            <p>
+              Open a product to fix its details, see where every unit is, and work through its review items. Quantities
+              are corrected by counting in Stocktake, never typed over.
+            </p>
+            <p>Expensive: {EXPENSIVE_RULE_TEXT} &quot;Needs a price&quot; is reusable kit with no price yet.</p>
+          </>
+        }
         actions={
           <Button size="sm" onClick={() => setFormOpen(true)}>
             <IconPlus size={16} />
@@ -226,6 +264,8 @@ function Products() {
             { value: "empty", label: "Empty", count: bucketCounts.empty },
             { value: "negative", label: "Negative", count: bucketCounts.negative, tone: "danger" },
             { value: "review", label: "Needs review", count: bucketCounts.review, tone: "warning" },
+            { value: "expensive", label: "Expensive", count: bucketCounts.expensive },
+            { value: "needs_price", label: "Needs a price", count: bucketCounts.needsPrice, tone: "warning" },
           ]}
         />
         <div className="flex items-center gap-2">

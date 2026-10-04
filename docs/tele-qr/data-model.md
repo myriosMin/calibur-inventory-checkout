@@ -321,6 +321,12 @@ Added for the real catalog import. Details and the reasoning are in
   or company. It is deliberately not called "borrowed", because a borrow is a
   member checkout.
 - `products.supplier`, `products.unit_cost_sgd`: for the procurement team.
+- `products.expensive` (0028): generated, `coalesce(unit_cost_sgd >= 20,
+  criticality = 'critical')`. An expensive product must be returnable
+  (`products_expensive_returnable`), so the checkout lends it and never
+  consumes it. `review_items.about_expensive` marks a question about
+  expensive kit that has no single product link. Expensive questions are
+  settled first.
 - `products.legacy_ref`: provenance across the three spreadsheet tabs and the
   legacy app. `legacy_row` could only point into one CSV.
 - `asset_units`: one row per serialised unit (component ID, serial, condition,
