@@ -42,3 +42,7 @@ supabase/.temp
 scripts/out/
 qr-test-labels/
 .env*
+
+# agent
+.codex-finalizer/
+.codex-pptx-build/
